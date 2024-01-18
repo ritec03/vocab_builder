@@ -1,5 +1,5 @@
 import random
-from helpers import choose_topic
+from typing import List
 from secret import OPEN_AI_KEY
 from langchain.prompts import PromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
@@ -53,7 +53,7 @@ def generate_parts_of_speech_string():
     return result_string
 
 class WordList(BaseModel):
-    words: list[str] = Field(description="list of words in the target language")
+    words: List[str] = Field(description="list of words in the target language")
     target_language: str = Field(description="the target language")
 
 word_list_json_parser = JsonOutputParser(pydantic_object=WordList)
@@ -80,35 +80,44 @@ word_list_gen_prompt = PromptTemplate(
 
 word_list_gen_chain = word_list_gen_prompt | llm | word_list_json_parser
 
+class Sentence(BaseModel):
+    sentence: str= Field(description="sentence in the target language")
+    translation: str = Field(description="translation of the sentence")
+
+sentence_json_parser = JsonOutputParser(pydantic_object=Sentence)
+
 sentence_prompt = PromptTemplate(
     template="""    
         You are a vocabulary trainer that helps students with learning words in a foreign language.
-        Create a sentence using in the target language that uses the target word in some of its forms and that is also
+        Create a sentence in the target language that uses the target word in some of its forms and that is also
         indicative of intermediate B2 level in the target language
         as well as falls under the provided topic. You do not have to use the word in the exact form, but can provide a sentence, where
         the given word is in a different form (eg. different case, number, mood, tense, person, etc.)
-        Provide just the sentence and nothing else. 
+        Then, create a translation of that generated sentence into english.
+
+        {format_instructions}
+
         Target language: {input}
         word: {word}
         topic: {topic}
     """,
     input_variables=["input", "word"],
-    partial_variables={"topic": choose_topic()}
+    partial_variables={"topic": choose_topic(), "format_instructions": sentence_json_parser.get_format_instructions()}
 )
 
-sentence_creation_chain = sentence_prompt | llm | str_output_parser
+sentence_creation_chain = sentence_prompt | llm | sentence_json_parser
 
 class EvaluationOutput(BaseModel):
     correct_translation: str = Field(description="the correct translation of the target sentence")
     sentence_evaluation: str = Field(description="evaluation of the user's sentence translation")
     sentence_eval_explanation: str = Field(description="explanation of the translation evaluation")
-    word_evaluation: str = Field(description="evaluation of the target word translation by user")
+    word_evaluation: int = Field(description="evaluation of the target word translation by user")
     word_eval_explanation: str = Field(description="explanation of target word translation evaluation")
 
 
 json_parser = JsonOutputParser(pydantic_object=EvaluationOutput)
 evaluation_prompt = PromptTemplate(
-    template = """Given the target sentence and the user translation and the target word, firstly, provide a correct translation for the target sentence into english,
+    template = """Given the target sentence and the user translation and the target word
     evaluate the user translation of the
     target sentence on a scale to from 1 to 10, provide terse 1 sentence explanation if your score is less then 10,
     then provide the the target word score on a scale from 1 to 10. If the word was translated correctly in the sentence,
