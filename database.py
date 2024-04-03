@@ -4,8 +4,11 @@ the vocabulary learning application.
 """
 import sqlite3
 from sqlite3 import IntegrityError, Connection
+from attr import dataclass
 import pandas as pd
 from typing import List, Tuple
+
+from exercise import Evaluation
 
 MAX_USER_NAME_LENGTH = 20
 MAX_SCORE = 10
@@ -64,6 +67,65 @@ def create_db(conn: Connection) -> None:
             score INTERER CHECK (score >=0 AND score <= 10),
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (word_id) REFERENCES words(id)
+        )
+    ''')
+
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS templates
+        (
+            id INTEGER PRIMARY KEY,
+            template TEXT,
+            description TEXT
+        )
+    ''')
+
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS tasks
+        (
+            id INTEGER PRIMARY KEY,
+            template_id INTEGER,
+            description TEXT,
+            FOREIGN KEY (template_id) REFERENCES templates(id)
+        )
+    ''')
+
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS resources
+        (
+            id INTEGER PRIMARY KEY,
+            resource_text TEXT
+        )
+    ''')
+
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS task_resources
+        (
+            id INTEGER PRIMARY KEY,
+            task_id INTEGER,
+            resource_id INTEGER,
+            FOREIGN KEY (task_id) REFERENCES tasks(id),
+            FOREIGN KEY (resource_id) REFERENCES resources(id)
+        )
+    ''')
+
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS resource_words
+        (
+            resource_id INTEGER,
+            word_id INTEGER,
+            FOREIGN KEY (resource_id) REFERENCES resources(id),
+            FOREIGN KEY (word_id) REFERENCES words(id)
+        )
+    ''')
+
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS user_lesson_history
+        (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER,
+            evaluation_json TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     ''')
 
@@ -189,6 +251,30 @@ def add_word_score(conn: Connection, user_id: int, word_id: int, score: int) -> 
     finally:
         cur.close()
 
+@dataclass
+class Score():
+    word_id: int
+    score: int
+
+
+def retrieve_user_scores(conn: Connection, user_id: int) -> List[Score]:
+    """
+    Retrieves word score data of a suer from the learning_data table
+    and returnes them as a list of Score.
+    """
+    raise NotImplementedError()
+
+def save_user_lesson_data(conn: Connection, user_id: int, lesson_data: List[Evaluation]) -> None:
+    """
+    
+    """
+    raise NotImplementedError()
+
+def update_user_scores(conn: Connection, user_id: int, lesson_scores: List[Score]) -> None:
+    """
+    
+    """
+    raise NotImplementedError()
 
 db_conn = connect_to_db(DATABASE_PATH)
 create_db(db_conn)
