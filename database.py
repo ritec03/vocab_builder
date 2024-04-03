@@ -14,6 +14,12 @@ MAX_USER_NAME_LENGTH = 20
 MAX_SCORE = 10
 MIN_SCORE = 0
 DATABASE_PATH = "vocabulary_app.db"
+SCHEMA_PATH = "schema.sql"
+
+@dataclass
+class Score():
+    word_id: int
+    score: int
 
 class ValueDoesNotExistInDB(LookupError):
     """
@@ -38,96 +44,12 @@ def create_db(conn: Connection) -> None:
     # Create a cursor object to execute SQL commands
     cur = conn.cursor()
 
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS words
-        (
-            id INTEGER PRIMARY KEY,
-            word TEXT,
-            pos TEXT,
-            freq INTEGER,
-            UNIQUE (word, pos)
-        )
-    ''')
+    # Read the SQL file
+    with open(SCHEMA_PATH, 'r') as file:
+        sql_script = file.read()
 
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS users
-        (
-            id INTEGER PRIMARY KEY,
-            user_name TEXT,
-            UNIQUE (user_name)
-        )
-    ''')
-
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS learning_data
-        (
-            id INTEGER PRIMARY KEY,
-            user_id INTEGER,
-            word_id INTEGER,
-            score INTERER CHECK (score >=0 AND score <= 10),
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            FOREIGN KEY (word_id) REFERENCES words(id)
-        )
-    ''')
-
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS templates
-        (
-            id INTEGER PRIMARY KEY,
-            template TEXT,
-            description TEXT
-        )
-    ''')
-
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS tasks
-        (
-            id INTEGER PRIMARY KEY,
-            template_id INTEGER,
-            description TEXT,
-            FOREIGN KEY (template_id) REFERENCES templates(id)
-        )
-    ''')
-
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS resources
-        (
-            id INTEGER PRIMARY KEY,
-            resource_text TEXT
-        )
-    ''')
-
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS task_resources
-        (
-            id INTEGER PRIMARY KEY,
-            task_id INTEGER,
-            resource_id INTEGER,
-            FOREIGN KEY (task_id) REFERENCES tasks(id),
-            FOREIGN KEY (resource_id) REFERENCES resources(id)
-        )
-    ''')
-
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS resource_words
-        (
-            resource_id INTEGER,
-            word_id INTEGER,
-            FOREIGN KEY (resource_id) REFERENCES resources(id),
-            FOREIGN KEY (word_id) REFERENCES words(id)
-        )
-    ''')
-
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS user_lesson_history
-        (
-            id INTEGER PRIMARY KEY,
-            user_id INTEGER,
-            evaluation_json TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    ''')
+    # Execute the SQL script
+    cur.executescript(sql_script)
 
     # Commit the transaction (save changes)
     conn.commit()
@@ -250,12 +172,6 @@ def add_word_score(conn: Connection, user_id: int, word_id: int, score: int) -> 
                 raise ValueDoesNotExistInDB(f"Word with ID {word_id} does not exist.")
     finally:
         cur.close()
-
-@dataclass
-class Score():
-    word_id: int
-    score: int
-
 
 def retrieve_user_scores(conn: Connection, user_id: int) -> List[Score]:
     """
