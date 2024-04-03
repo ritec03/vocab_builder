@@ -2,13 +2,13 @@
 This script creates the database and tables for
 the vocabulary learning application.
 """
+from dataclasses import dataclass
 import sqlite3
 from sqlite3 import IntegrityError, Connection
-from attr import dataclass
 import pandas as pd
 from typing import List, Tuple
 
-from exercise import Evaluation
+from exercise import Evaluation, Task
 
 MAX_USER_NAME_LENGTH = 20
 MAX_SCORE = 10
@@ -190,6 +190,15 @@ def update_user_scores(conn: Connection, user_id: int, lesson_scores: List[Score
     """
     
     """
+    raise NotImplementedError()
+
+def fetch_tasks(self, criteria: List) -> List[Task]:
+    query = self.compose_query_from_criteria(criteria)
+    # Execute the query against the database
+    raise NotImplementedError()
+
+def compose_query_from_criteria(self, criteria: List) -> str:
+    # This method should translate the criteria objects into a database query.
     raise NotImplementedError()
 
 db_conn = connect_to_db(DATABASE_PATH)
