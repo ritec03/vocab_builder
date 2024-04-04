@@ -1,5 +1,6 @@
 import unittest
 import sqlite3
+from data_structures import Score
 from database import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, DatabaseManager, SCHEMA_PATH, ValueDoesNotExistInDB
 import os
 
@@ -12,7 +13,7 @@ class TestDatabaseFunctions(unittest.TestCase):
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
         self.db_manager = DatabaseManager(TEST_DB_FILE)
-        self.db_manager.create_db(SCHEMA_PATH)
+        self.db_manager.create_db()
 
     def tearDown(self):
         # Close the database connection and delete the test database file
@@ -22,9 +23,9 @@ class TestDatabaseFunctions(unittest.TestCase):
 
     def test_insert_user(self):
         # Test inserting a new user
-        self.db_manager.insert_user(self.conn, "test_user")
+        self.db_manager.insert_user("test_user")
         # Assert that the user is inserted successfully
-        cur = self.conn.cursor()
+        cur = self.db_manager.connection.cursor()
         cur.execute("SELECT user_name FROM users WHERE user_name=?", ("test_user",))
         result = cur.fetchone()
         self.assertIsNotNone(result)  # Check that a row is returned
@@ -32,16 +33,16 @@ class TestDatabaseFunctions(unittest.TestCase):
 
     def test_insert_duplicate_user(self):
         # Test inserting a user with the same user name (should fail)
-        self.db_manager.insert_user(self.conn, "test_user")
+        self.db_manager.insert_user("test_user")
         with self.assertRaises(ValueError):
-            self.db_manager.insert_user(self.conn, "test_user")  # Inserting the same user name should raise IntegrityError
+            self.db_manager.insert_user("test_user")  # Inserting the same user name should raise IntegrityError
 
     def test_remove_user_success(self):
         # Test removing an existing user
-        self.db_manager.insert_user(self.conn, "test_user")
-        self.db_manager.remove_user(self.conn, 1)  # Assuming the ID of the user just inserted is 1
+        self.db_manager.insert_user("test_user")
+        self.db_manager.remove_user(1)  # Assuming the ID of the user just inserted is 1
         # Assert that the user is removed successfully
-        cur = self.conn.cursor()
+        cur = self.db_manager.connection.cursor()
         cur.execute("SELECT user_name FROM users WHERE id=?", (1,))
         result = cur.fetchone()
         self.assertIsNone(result)  # Check that no row is returned
@@ -49,26 +50,26 @@ class TestDatabaseFunctions(unittest.TestCase):
     def test_remove_nonexistent_user(self):
         # Test removing a non-existent user
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.remove_user(self.conn, 1)  # Attempting to remove a non-existent user should raise an exception
+            self.db_manager.remove_user(1)  # Attempting to remove a non-existent user should raise an exception
             
     def test_add_user_invalid_name_type(self):
         # Test adding a user with a user name that is not a string
         with self.assertRaises(ValueError):
-            self.db_manager.insert_user(self.conn, 123)  # Inserting a non-string user name should raise a ValueError
+            self.db_manager.insert_user(123)  # Inserting a non-string user name should raise a ValueError
 
     def test_add_user_long_name(self):
         # Test adding a user with a user name that is too long
         long_username = "a" * (MAX_USER_NAME_LENGTH + 1)  # Create a user name longer than MAX_USER_NAME_LENGTH
         with self.assertRaises(ValueError):
-            self.db_manager.insert_user(self.conn, long_username)  # Inserting a long user name should raise a ValueError
+            self.db_manager.insert_user(long_username)  # Inserting a long user name should raise a ValueError
 
     def test_add_two_word_entries(self):
         # Test adding two word entries to the words table successfully
         word_list = [("cat", "NOUN", 10), ("dog", "NOUN", 5)]
-        self.db_manager.add_words_to_db(self.conn, word_list)
+        self.db_manager.add_words_to_db(word_list)
 
         # Assert that the entries are added successfully
-        cur = self.conn.cursor()
+        cur = self.db_manager.connection.cursor()
         cur.execute("SELECT COUNT(*) FROM words")
         count = cur.fetchone()[0]
         self.assertEqual(count, 2)  # Check that there are two entries in the words table
@@ -83,12 +84,12 @@ class TestDatabaseFunctions(unittest.TestCase):
         OLD_FREQ = 10
         NEW_FREQ = 15
         word_list = [("cat", "NOUN", OLD_FREQ)]
-        self.db_manager.add_words_to_db(self.conn, word_list)  # Add initial entry
+        self.db_manager.add_words_to_db(word_list)  # Add initial entry
         word_list_update = [("cat", "NOUN", NEW_FREQ)]
-        self.db_manager.add_words_to_db(self.conn, word_list_update)  # Update frequency
+        self.db_manager.add_words_to_db(word_list_update)  # Update frequency
 
         # Assert that the frequency is updated
-        cur = self.conn.cursor()
+        cur = self.db_manager.connection.cursor()
         cur.execute("SELECT freq FROM words WHERE word=? AND pos=?", ("cat", "NOUN"))
         freq = cur.fetchone()[0]
         self.assertEqual(freq, NEW_FREQ)  # Check that the frequency is updated to NEW_FREQ
@@ -96,27 +97,53 @@ class TestDatabaseFunctions(unittest.TestCase):
     def test_add_existing_word_entry(self):
         # Test adding an existing word/pos entry to the words table
         word_list = [("cat", "NOUN", 10)]
-        self.db_manager.add_words_to_db(self.conn, word_list)  # Add initial entry
-        self.db_manager.add_words_to_db(self.conn, word_list)  # Attempt to add the same entry again
+        self.db_manager.add_words_to_db(word_list)  # Add initial entry
+        self.db_manager.add_words_to_db(word_list)  # Attempt to add the same entry again
 
         # Assert that the entry remains the same (nothing happens)
-        cur = self.conn.cursor()
+        cur = self.db_manager.connection.cursor()
         cur.execute("SELECT freq FROM words WHERE word=? AND pos=?", ("cat", "NOUN"))
         freq = cur.fetchone()[0]
         self.assertEqual(freq, 10)  # Check that the frequency remains 10
 
-    def test_add_word_score(self):
+    def test_add_word_score_update_existing(self):
         # Test adding a word score
-        self.db_manager.insert_user(self.conn, "test_user")
+        self.db_manager.insert_user("test_user")
         word_list = [("cat", "NOUN", 10)]
-        self.db_manager.add_words_to_db(self.conn, word_list)
+        self.db_manager.add_words_to_db(word_list)
         # Get the id of the word and the user
-        cur = self.conn.cursor()
+        cur = self.db_manager.connection.cursor()
         cur.execute("SELECT id FROM words WHERE word=? AND pos=?", ("cat", "NOUN"))
         word_id = cur.fetchone()[0]
         cur.execute("SELECT id FROM users WHERE user_name=?", ("test_user",))
         user_id = cur.fetchone()[0]
-        self.db_manager.add_word_score(self.conn, user_id, word_id, 8)  # Assuming user_id and word_id are both 1
+        
+        OLD_SCORE = 8
+        NEW_SCORE = 5
+
+        self.db_manager.add_word_score(user_id, word_id, OLD_SCORE)
+        # Assert that the word score is added successfully
+        cur.execute("SELECT score FROM learning_data WHERE user_id=? AND word_id=?", (user_id, word_id))
+        score = cur.fetchone()[0]
+        self.assertEqual(score, OLD_SCORE)  # Check that the score is OLD_SCORE
+        # update the score again and see if it changes
+        self.db_manager.add_word_score(user_id, word_id, NEW_SCORE)
+        cur.execute("SELECT score FROM learning_data WHERE user_id=? AND word_id=?", (user_id, word_id))
+        score = cur.fetchone()[0]
+        self.assertEqual(score, NEW_SCORE)  # Check that the score is NEW_SCORE
+
+    def test_add_word_score(self):
+        # Test adding a word score
+        self.db_manager.insert_user("test_user")
+        word_list = [("cat", "NOUN", 10)]
+        self.db_manager.add_words_to_db(word_list)
+        # Get the id of the word and the user
+        cur = self.db_manager.connection.cursor()
+        cur.execute("SELECT id FROM words WHERE word=? AND pos=?", ("cat", "NOUN"))
+        word_id = cur.fetchone()[0]
+        cur.execute("SELECT id FROM users WHERE user_name=?", ("test_user",))
+        user_id = cur.fetchone()[0]
+        self.db_manager.add_word_score(user_id, word_id, 8)
 
         # Assert that the word score is added successfully
         cur.execute("SELECT score FROM learning_data WHERE user_id=? AND word_id=?", (user_id, word_id))
@@ -125,30 +152,108 @@ class TestDatabaseFunctions(unittest.TestCase):
 
     def test_add_word_score_nonexistent_user(self):
         word_list = [("cat", "NOUN", 10)]
-        self.db_manager.add_words_to_db(self.conn, word_list)
+        self.db_manager.add_words_to_db(word_list)
         # Get the id of the word
-        cur = self.conn.cursor()
+        cur = self.db_manager.connection.cursor()
         cur.execute("SELECT id FROM words WHERE word=? AND pos=?", ("cat", "NOUN"))
         word_id = cur.fetchone()[0]
         # Test adding a word score with a non-existent user
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.add_word_score(self.conn, 999, word_id, 8)  # Attempting to add a score for a non-existent user should raise an error
+            self.db_manager.add_word_score(999, word_id, 8)  # Attempting to add a score for a non-existent user should raise an error
 
     def test_add_word_score_nonexistent_word_id(self):
         # Test adding a word score with a non-existent word_id
-        self.db_manager.insert_user(self.conn, "test_user")
+        self.db_manager.insert_user("test_user")
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.add_word_score(self.conn, 1, 999, 8)  # Attempting to add a score for a non-existent word_id should raise an error
+            self.db_manager.add_word_score(1, 999, 8)  # Attempting to add a score for a non-existent word_id should raise an error
 
     def test_add_word_score_incorrect_score(self):
         # Test adding a word score with an incorrect score
-        self.db_manager.insert_user(self.conn, "test_user")
+        self.db_manager.insert_user("test_user")
         word_list = [("cat", "NOUN", 10)]
-        self.db_manager.add_words_to_db(self.conn, word_list)
+        self.db_manager.add_words_to_db(word_list)
         with self.assertRaises(ValueError):
-            self.db_manager.add_word_score(self.conn, 1, 1, (MIN_SCORE - 1))  # Attempting to add a negative score should raise an error
+            self.db_manager.add_word_score(1, 1, (MIN_SCORE - 1))  # Attempting to add a negative score should raise an error
         with self.assertRaises(ValueError):
-            self.db_manager.add_word_score(self.conn, 1, 1, (MAX_SCORE + 1))  # Attempting to add a score above the maximum should raise an error
+            self.db_manager.add_word_score(1, 1, (MAX_SCORE + 1))  # Attempting to add a score above the maximum should raise an error
+
+class TestRetrieveUserScores(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        """
+        Class method to set up the environment for all tests once.
+        """
+        # Ensure the test database does not exist before starting tests
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        cls.db_manager = DatabaseManager(TEST_DB_FILE)
+        cls.db_manager.create_db()
+
+    @classmethod
+    def tearDownClass(cls):
+        """
+        Class method to clean up the environment after all tests.
+        """
+        cls.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def setUp(self):
+        """
+        Method to set up the environment before each test.
+        """
+        # Insert test data
+        self.db_manager.insert_user("test_user")
+        # Insert two words into the database
+        self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
+        user_id, word_ids = self.get_test_user_and_word_ids()
+        # Add scores for both words for the user
+        self.db_manager.add_word_score(user_id, word_ids[0], 5)
+        self.db_manager.add_word_score(user_id, word_ids[1], 8)
+
+    def get_test_user_and_word_ids(self):
+        """
+        Helper method to retrieve test user and word IDs.
+        This method now returns a list of word IDs to handle multiple words.
+        """
+        user_id = self.db_manager.connection.execute("SELECT id FROM users WHERE user_name=?", ("test_user",)).fetchone()[0]
+        word_ids = [
+            self.db_manager.connection.execute("SELECT id FROM words WHERE word=?", ("test",)).fetchone()[0],
+            self.db_manager.connection.execute("SELECT id FROM words WHERE word=?", ("study",)).fetchone()[0]
+        ]
+        return user_id, word_ids
+
+    def test_user_with_scores(self):
+        """
+        Test retrieving scores for a user with existing scores for multiple words.
+        """
+        user_id, word_ids = self.get_test_user_and_word_ids()
+        scores = self.db_manager.retrieve_user_scores(user_id)
+        self.assertIsInstance(scores, list)
+        self.assertEqual(len(scores), 2)  # Expecting scores for 2 words
+        # Ensure that the scores list contains Score objects with the correct scores
+        scores_dict = {score.word_id: score.score for score in scores}
+        self.assertEqual(scores_dict.get(word_ids[0]), 5)
+        self.assertEqual(scores_dict.get(word_ids[1]), 8)
+
+    def test_user_without_scores(self):
+        """
+        Test retrieving scores for a user without scores.
+        """
+        self.db_manager.insert_user("another_user")
+        another_user_id = self.db_manager.connection.execute("SELECT id FROM users WHERE user_name=?", ("another_user",)).fetchone()[0]
+        scores = self.db_manager.retrieve_user_scores(another_user_id)
+        self.assertIsInstance(scores, list)
+        self.assertEqual(len(scores), 0)
+
+    def test_nonexistent_user(self):
+        """
+        Test retrieving scores for a nonexistent user.
+        """
+        with self.assertRaises(ValueDoesNotExistInDB):
+            scores = self.db_manager.retrieve_user_scores(9999)  # Assuming 9999 is an ID that does not exist
+
+
 
 if __name__ == '__main__':
     unittest.main()

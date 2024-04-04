@@ -2,13 +2,12 @@
 This script creates the database and tables for
 the vocabulary learning application.
 """
-from dataclasses import dataclass
 import sqlite3
 from sqlite3 import IntegrityError, Connection
 import pandas as pd
 from typing import List, Tuple
-
-from exercise import Evaluation, Task
+from data_structures import Score
+from task import Evaluation, Task
 
 MAX_USER_NAME_LENGTH = 20
 MAX_SCORE = 10
@@ -16,10 +15,6 @@ MIN_SCORE = 0
 DATABASE_PATH = "vocabulary_app.db"
 SCHEMA_PATH = "schema.sql"
 
-@dataclass
-class Score():
-    word_id: int
-    score: int
 
 class ValueDoesNotExistInDB(LookupError):
     """
@@ -146,8 +141,9 @@ class DatabaseManager:
 
     def add_word_score(self, user_id: int, word_id: int, score: int) -> None:
         """
-        Add a row to learning_data for user with user_id
-        for word_id and score. Score should be between MIN_SCORE and MAX_SCORE.
+        Adds or updates a row in learning_data for the user with user_id
+        for word_id with the given score. Score should be between MIN_SCORE and MAX_SCORE.
+        If a score for the word already exists for the user, it is updated.
 
         Args:
             user_id (int): ID of the user.
@@ -156,41 +152,56 @@ class DatabaseManager:
         """
         if not MIN_SCORE <= score <= MAX_SCORE:
             raise ValueError(f"Score should be between {MIN_SCORE} and {MAX_SCORE}.")
-        
+
         cur = self.connection.cursor()
+        # Check for existing user and word entries
+        cur.execute("SELECT 1 FROM users WHERE id=?", (user_id,))
+        if not cur.fetchone():
+            cur.close()
+            raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
+
+        cur.execute("SELECT 1 FROM words WHERE id=?", (word_id,))
+        if not cur.fetchone():
+            cur.close()
+            raise ValueDoesNotExistInDB(f"Word with ID {word_id} does not exist.")
+
+        # Insert or update the score
         try:
-            cur.execute("INSERT INTO learning_data (user_id, word_id, score) VALUES (?, ?, ?)", (user_id, word_id, score))
+            cur.execute("""
+                INSERT INTO learning_data (user_id, word_id, score)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, word_id)
+                DO UPDATE SET score = excluded.score
+            """, (user_id, word_id, score))
             self.connection.commit()
-            print("Word score added successfully.")
-        except IntegrityError:
-            # Check if user_id or word_id does not exist
-            cur.execute("SELECT 1 FROM users WHERE id=?", (user_id,))
-            print(cur.fetchone())
-            if not cur.fetchone():
-                raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
-            else:
-                cur.execute("SELECT 1 FROM words WHERE id=?", (word_id,))
-                if not cur.fetchone():
-                    raise ValueDoesNotExistInDB(f"Word with ID {word_id} does not exist.")
+            print("Word score added or updated successfully.")
+        except IntegrityError as e:
+            # Handle any integrity errors
+            raise Exception(f"Integrity error occurred: {e}")
         finally:
             cur.close()
 
+
     def retrieve_user_scores(self, user_id: int) -> List[Score]:
         """
-        Retrieves word score data of a suer from the learning_data table
+        Retrieves word score data of a user from the learning_data table
         and returnes them as a list of Score.
+        Raise ValueDoesNotExistInDB error if non-existent user is requested.
         """
         raise NotImplementedError()
 
     def save_user_lesson_data(self, user_id: int, lesson_data: List[Evaluation]) -> None:
         """
-        
+        Saves lesson data as a json string of lesson data in user lesson history table.
         """
         raise NotImplementedError()
 
     def update_user_scores(self, user_id: int, lesson_scores: List[Score]) -> None:
         """
-        
+        Update user scores for the lesson scores which is a list of scores
+        for each word_id. If the word with a score for the user is already in db,
+        udpate it, add it otherwise.
+        If non existent user 
         """
         raise NotImplementedError()
 
