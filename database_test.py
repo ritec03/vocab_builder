@@ -177,24 +177,61 @@ class TestDatabaseFunctions(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.db_manager.add_word_score(1, 1, (MAX_SCORE + 1))  # Attempting to add a score above the maximum should raise an error
 
-class TestRetrieveUserScores(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        """
-        Class method to set up the environment for all tests once.
-        """
-        # Ensure the test database does not exist before starting tests
+class TestUpdateUserScores(unittest.TestCase):
+    def setUp(self):
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
-        cls.db_manager = DatabaseManager(TEST_DB_FILE)
-        cls.db_manager.create_db()
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+        self.db_manager.create_db()
+        # Insert a test user and words to ensure they exist
+        self.db_manager.insert_user("test_user")
+        self.db_manager.add_words_to_db([("word1", "noun", 1), ("word2", "verb", 2), ("word3", "adj", 3)])
+        self.user_id = self.db_manager.connection.execute("SELECT id FROM users WHERE user_name='test_user'").fetchone()[0]
+        self.word_ids = [self.db_manager.connection.execute("SELECT id FROM words WHERE word=?", (f"word{i}",)).fetchone()[0] for i in range(1, 4)]
 
-    @classmethod
-    def tearDownClass(cls):
+    def tearDown(self):
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_update_user_scores_single_score_update(self):
+        # Test adding a single score and updating it
+        initial_scores = [Score(word_id=self.word_ids[0], score=5)]
+        updated_scores = [Score(word_id=self.word_ids[0], score=7)]
+        self.db_manager.update_user_scores(self.user_id, initial_scores)
+        self.db_manager.update_user_scores(self.user_id, updated_scores)
+        scores = self.db_manager.retrieve_user_scores(self.user_id)
+        self.assertEqual(scores[0].score, 7)
+
+    def test_update_user_scores_multiple_scores_update(self):
+        # Test adding three scores, then updating two of them
+        initial_scores = [Score(word_id=self.word_ids[i], score=3 + i) for i in range(3)]
+        updated_scores = [Score(word_id=self.word_ids[0], score=8), Score(word_id=self.word_ids[1], score=9)]
+        self.db_manager.update_user_scores(self.user_id, initial_scores)
+        self.db_manager.update_user_scores(self.user_id, updated_scores)
+        scores = self.db_manager.retrieve_user_scores(self.user_id)
+        self.assertEqual(scores[0].score, 8)
+        self.assertEqual(scores[1].score, 9)
+        self.assertEqual(scores[2].score, 5)  # Unchanged
+
+    def test_update_user_scores_nonexistent_word(self):
+        # Test updating with a word_id that does not exist
+        scores = [Score(word_id=9999, score=7)]  # Assuming 9999 is an ID that does not exist
+        with self.assertRaises(ValueDoesNotExistInDB):
+            self.db_manager.update_user_scores(self.user_id, scores)
+
+    def test_update_user_scores_nonexistent_user(self):
+        # Test updating a score for a non-existent user
+        scores = [Score(word_id=self.word_ids[0], score=7)]
+        with self.assertRaises(ValueDoesNotExistInDB):
+            self.db_manager.update_user_scores(9999, scores)  # Assuming 9999 is a non-existent user ID
+
+class TestRetrieveUserScores(unittest.TestCase):
+    def tearDown(self):
         """
         Class method to clean up the environment after all tests.
         """
-        cls.db_manager.close()
+        self.db_manager.close()
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
 
@@ -202,6 +239,10 @@ class TestRetrieveUserScores(unittest.TestCase):
         """
         Method to set up the environment before each test.
         """
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+        self.db_manager.create_db()
         # Insert test data
         self.db_manager.insert_user("test_user")
         # Insert two words into the database

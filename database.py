@@ -181,6 +181,33 @@ class DatabaseManager:
         finally:
             cur.close()
 
+    def update_user_scores(self, user_id: int, lesson_scores: List[Score]) -> None:
+        """
+        Update user scores for the lesson scores which is a list of scores
+        for each word_id. If the word with a score for the user is already in db,
+        udpate it, add it otherwise.
+        If non existent user - raise ValueDoesNotExistInDB
+        If ther eis a word or words that are not in db - raise ValueDoesNotExistInDB
+        """
+        cur = self.connection.cursor()
+        # Verify the user exists
+        cur.execute("SELECT id FROM users WHERE id=?", (user_id,))
+        if cur.fetchone() is None:
+            raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
+
+        for score in lesson_scores:
+            # Verify each word exists
+            cur.execute("SELECT id FROM words WHERE id=?", (score.word_id,))
+            if cur.fetchone() is None:
+                raise ValueDoesNotExistInDB(f"Word with ID {score.word_id} does not exist.")
+
+            # Update or insert the score
+            cur.execute("""
+                INSERT INTO learning_data (user_id, word_id, score)
+                VALUES (?, ?, ?) ON CONFLICT(user_id, word_id)
+                DO UPDATE SET score=excluded.score
+            """, (user_id, score.word_id, score.score))
+        self.connection.commit()
 
     def retrieve_user_scores(self, user_id: int) -> List[Score]:
         """
@@ -188,7 +215,15 @@ class DatabaseManager:
         and returnes them as a list of Score.
         Raise ValueDoesNotExistInDB error if non-existent user is requested.
         """
-        raise NotImplementedError()
+        cur = self.connection.cursor()
+        # Verify the user exists
+        cur.execute("SELECT id FROM users WHERE id=?", (user_id,))
+        if cur.fetchone() is None:
+            raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
+
+        cur.execute("SELECT word_id, score FROM learning_data WHERE user_id=?", (user_id,))
+        scores = [Score(word_id=row[0], score=row[1]) for row in cur.fetchall()]
+        return scores
 
     def save_user_lesson_data(self, user_id: int, lesson_data: List[Evaluation]) -> None:
         """
@@ -196,14 +231,6 @@ class DatabaseManager:
         """
         raise NotImplementedError()
 
-    def update_user_scores(self, user_id: int, lesson_scores: List[Score]) -> None:
-        """
-        Update user scores for the lesson scores which is a list of scores
-        for each word_id. If the word with a score for the user is already in db,
-        udpate it, add it otherwise.
-        If non existent user 
-        """
-        raise NotImplementedError()
 
     def fetch_tasks(self, criteria: List) -> List[Task]:
         query = self.compose_query_from_criteria(criteria)
