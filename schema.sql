@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS learning_data (
     user_id INTEGER,
     word_id INTEGER,
     score INTEGER CHECK (score >= 0 AND score <= 10),
+    UNIQUE (user_id, word_id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (word_id) REFERENCES words(id)
 );
