@@ -1,8 +1,11 @@
+import json
 import unittest
 import sqlite3
 from data_structures import Score
 from database import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, DatabaseManager, SCHEMA_PATH, ValueDoesNotExistInDB
 import os
+
+from task import Evaluation, Task
 
 # Define a test database file path
 TEST_DB_FILE = "test_database.db"
@@ -294,6 +297,66 @@ class TestRetrieveUserScores(unittest.TestCase):
         with self.assertRaises(ValueDoesNotExistInDB):
             scores = self.db_manager.retrieve_user_scores(9999)  # Assuming 9999 is an ID that does not exist
 
+class TestSaveUserLessonData(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+        self.db_manager.create_db()
+        self.db_manager.insert_user("test_user")
+        self.user_id = self.db_manager.connection.execute("SELECT id FROM users WHERE user_name=?", ("test_user",)).fetchone()[0]
+
+    def tearDown(self):
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_add_non_list_evaluation_object(self):
+        """
+        Test try to add an object that is not a list of evaluation objects.
+        """
+        with self.assertRaises(TypeError):
+            self.db_manager.save_user_lesson_data(self.user_id, "This is not a list of Evaluation objects")
+
+    def test_nonexistent_user(self):
+        """
+        Test try to save lesson data for a non-existent user.
+        """
+        with self.assertRaises(ValueDoesNotExistInDB):
+            self.db_manager.save_user_lesson_data(9999, [])
+
+    def test_add_empty_evaluation_object(self):
+        """
+        Test tries to add an empty evaluation object (which history entry is an empty list).
+        """
+        with self.assertRaises(ValueError):
+            self.db_manager.save_user_lesson_data(self.user_id, [Evaluation()])  # Passing an Evaluation object with an empty history
+
+    def test_add_two_evaluations_with_two_history_entries_each(self):
+        """
+        Test with a list that contains two evaluations, each of which contains two history entries.
+        """
+        task = Task(template="Test Template", resources=["test", "study"], learning_items=set())
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "Response 1", [Score(word_id=1, score=5)], None)
+        evaluation1.add_entry(task, "Response 2", [Score(word_id=2, score=8)], None)
+        
+        evaluation2 = Evaluation()
+        evaluation2.add_entry(task, "Response 3", [Score(word_id=1, score=6)], None)
+        evaluation2.add_entry(task, "Response 4", [Score(word_id=2, score=7)], None)
+        
+        self.db_manager.save_user_lesson_data(self.user_id, [evaluation1, evaluation2])
+        
+        # Fetch saved lesson data to validate
+        cur = self.db_manager.connection.cursor()
+        cur.execute("SELECT evaluation_json FROM user_lesson_history WHERE user_id=?", (self.user_id,))
+        saved_data = cur.fetchone()[0]
+        cur.close()
+        
+        saved_evaluations = json.loads(saved_data)
+        self.assertEqual(len(saved_evaluations), 2)  # Ensure there are two evaluations saved
+        self.assertEqual(len(saved_evaluations[0]['history']), 2)  # First evaluation has two history entries
+        self.assertEqual(len(saved_evaluations[1]['history']), 2)  # Second evaluation has two history entries
 
 
 if __name__ == '__main__':

@@ -1,91 +1,8 @@
 from abc import ABC, abstractmethod
-import copy
-from dataclasses import dataclass
-from typing import List, Optional, Set, Tuple, Dict
-from datetime import datetime
-
-from database import Score, fetch_tasks, save_user_lesson_data
-
-class LexicalItem():
-    def __init__(self, item: str, pos: str, freq: int, id: int):
-        self.item = item
-        self.pos = pos
-        self.freq = freq
-        self.id = id
-
-class Task(ABC):
-    def __init__(self, template: str, resources: List[str], learning_items: Set[LexicalItem]):
-        """
-        Initialize a new task with a template and resources.
-        
-        :param template: A string template for the task, where placeholders are to be filled with resources.
-        :param resources: A dictionary of resources (e.g., words, sentences) to fill in the template.
-        :param learning_items: a set of words to be learned
-        """
-        self.template = template
-        self.resources = resources
-        self.learning_items = learning_items
-        self.correctAnswer = None  # This should be set by subclasses where the task is fully defined.
-
-    @abstractmethod
-    def produce_task(self) -> str:
-        """
-        Produces the task by combining the template with resources. This should be implemented by subclasses to
-        fill the template with appropriate resources, creating a specific instance of the task.
-        
-        :return: The complete task as a string.
-        """
-        pass
-
-    @abstractmethod
-    def evaluate_user_input(self, user_input) -> List[Tuple[int, int]]:
-        """
-        :return: list of tuples of word id and score
-        """
-        pass
-
-    def get_evaluation(self, user_input: str, evaluation: Evaluation) -> Evaluation:
-        """
-        Evaluates the user's input against the correct answer and 
-        creates a new evaluation manager object with the latest evaluation added to it.
-        
-        :param user_input: The user's input as a response to the task.
-        :param evaluation: The EvaluationManager instance tracking the session's evaluation history.
-        :return: The evaluation result as a new and updated object.
-        """
-        evaluation_result = self.evaluate_user_input()
-        new_evaluation = copy.deepcopy(evaluation)
-        new_evaluation.add_entry(self, user_input, evaluation_result)
-        return new_evaluation
-
-class HistoryEntry:
-    def __init__(self, task: Task, response: str, evaluation_result: List[Tuple[int, int]], correction=None):
-        # evaluation result is a list of tuples of word_id and score (multiple words can be evaluated
-        # in one evaluation)
-        self.task = task
-        self.response = response
-        self.evaluation_result = evaluation_result
-        self.correction = correction
-
-class Evaluation:
-    def __init__(self):
-        self.history = []
-
-    def add_entry(self, task: Task, response: str, evaluation_result: List[Tuple[int, int]], correction=None):
-        entry = HistoryEntry(task, response, evaluation_result, correction)
-        self.history.append(entry)
-
-    def get_history(self):
-        return self.history
-    
-    def get_final_score(self) -> List[Tuple[int, int]]:
-        """
-        Returns final score for the evaluation,
-        which is the evaluation result of the last history entry
-
-        :return: List[Tuple[int, int]] a list of tuple of (word_id, score)
-        """
-        raise NotImplementedError()
+from typing import List, Set, Tuple
+from data_structures import LexicalItem, Score
+from database import fetch_tasks, save_user_lesson_data
+from task import Evaluation, Task
 
 class ErrorCorrectionStrategy(ABC):
     @abstractmethod
@@ -273,34 +190,6 @@ class LessonGenerator():
     def generate_lesson_plan(self, words:Set[LexicalItem], user_lesson_history: List[Evaluation]) -> List[Tuple[Task, List[str]]]:
         raise NotImplementedError()
     
-# lesson generator can suggest existing tasks based on criteria
-# Create task factory that finds an existing task
-    
-@dataclass
-class TimePeriodCriterion:
-    """Represents a criterion based on the time period during which tasks were last practiced."""
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-
-@dataclass
-class NumberOfWordsCriterion:
-    """Represents a criterion based on the number of words involved in the tasks."""
-    min_words: int = 1
-    max_words: Optional[int] = None
-
-@dataclass
-class WordCriterion:
-    """Represents a criterion to include specific words to practice.
-    words: a set of word_ids
-    """
-    words: Set[int]
-
-@dataclass
-class TaskTypeCriterion:
-    """Represents a criterion based on the type of task to choose."""
-    task_types: Set[str]
-
-
 class TaskFactory:
     def __init__(self):
         pass
