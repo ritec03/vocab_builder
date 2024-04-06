@@ -62,28 +62,60 @@ class TaskTemplate():
         filled_template = self.template.substitute(resource_strings)
         return filled_template
 
+class EvaluationMethod(ABC):
+    """
+    Class that defines an evaluation strategy
+    It operates with gold standard answer, user answer and a context (such as task).
+    Context is defined by a class that uses the evaluation (such as by a concrete task class).
+    """
+    def __init__(self, context: Dict[str, str]):
+        self.context = context
+
+    @abstractmethod
+    def evaluate(self, gold_standard:str, user_answer: str, target_words: List[LexicalItem]):
+        """
+        Method that evaluates user answer against the gold standard with
+        consideration of the context.
+        """
+        pass
+
 class Task(ABC):
     def __init__(
             self, 
-            template: TaskTemplate, 
+            template_name: str, 
             resources: Dict[str, Resource], 
-            learning_items: Set[LexicalItem], 
+            learning_items: Set[LexicalItem],
             asnwer: str
         ):
         """
-        Initialize a new task with a template and resources.
+        Initialize a new task with a template and resources and evaluation method.
         
-        :param template: A string template for the task, where placeholders are to be filled with resources.
+        :param template_name: name of the tempalte compatible with this task type
         :param resources: A dictionary of resources with identifiers and resources to fill the template.
         :param learning_items: a set of words to be learned.
         """
-        self.template = template
+        self.template = self.get_template(template_name)
         if set(self.template.identifiers) != set(resources.keys()):
             raise ValueError("Template identifiers do not match resource keys")
         self.resources = resources
         self.learning_items = learning_items
         self.correctAnswer = asnwer  # This should be set by subclasses where the task is fully defined.
+        self.evaluation_method = self.initialize_evaluation_method()
 
+    @abstractmethod
+    def initialize_evaluation_method(self) -> EvaluationMethod:
+        """
+        Initialize evaluation method for this task type.
+        """
+        pass
+
+    @abstractmethod
+    def get_template(self, template_name: str) -> TaskTemplate:
+        """
+        Check that the template found at the template name is compatible with this
+        task class and if so return task tempalte, if not, raise an error
+        """
+        raise NotImplementedError("Get template is not implemented.")
 
     def produce_task(self) -> str:
         """
@@ -94,14 +126,13 @@ class Task(ABC):
         """
         return self.template.substitute(self.resources)
 
-    @abstractmethod
     def evaluate_user_input(self, user_input: str) -> List[Score]:
         """
         :return: list of tuples of word id and score
         The list should be equal to the power of the learning_items set and should
         assign scores to all items in that set.
         """
-        pass
+        return self.evaluation_method.evaluate(self.correctAnswer, user_input, self.learning_items)
 
     def get_evaluation(self, user_input: str, evaluation): # NOTE no type hint due to circular import of Evaluation
         """
@@ -155,7 +186,7 @@ class TaskFactory:
     def __init__(self):
         pass
 
-    def get_tasks_for_words(self, target_words: Set[str], criteria: List) -> List[Task]:
+    def get_task_for_word(self, target_words: Set[str], criteria: List) -> Task:
         """
         Retrieves or generates tasks based on the target set of words and additional criteria.
         
@@ -168,7 +199,7 @@ class TaskFactory:
         if tasks:
             return tasks[0] # NOTE for now just return the first task
         else:
-            return [self.generate_task(target_words, criteria)]
+            return self.generate_task(target_words, criteria)
 
     def generate_task(self, target_words: Set[str], criteria: List) -> Task:
         """
@@ -188,22 +219,7 @@ class TaskGenerator(ABC):
     """
     The abstract class defines a component responsible for generation of
     tasks based on criteria.
-
-    This class will receive a list of target lexical items (words) and find a task template,
-    resources and answer in the database or generate appropriate ones.
-    The class will also receive an optional template id to use.
     """
-
-    @abstractmethod
-    def find_or_generate_template(self, target_words: Set[LexicalItem], generate = False) -> TaskTemplate:
-        """
-        Finds a randomly selected template from the database or generates a new template
-        if there are no tempaltes or if generate flag is true.
-
-        Returns:
-            A TaskTemplate object
-        """
-        pass
 
     @abstractmethod
     def fetch_or_generate_resources(
@@ -247,8 +263,6 @@ class TaskGenerator(ABC):
         Returns:
             A Task object.
         """
-        if not template:
-            template = self.find_or_generate_template(target_words, generate)
         if not resources:
             resources, answer = self.fetch_or_generate_resources(template, target_words, generate)
         if not answer:
@@ -261,12 +275,6 @@ class ManualTaskGenerator(TaskGenerator):
     pass
 
 class AITaskGenerator(TaskGenerator):
-    def find_or_generate_template(self, target_words: Set[LexicalItem], generate: bool = False) -> TaskTemplate:
-        """
-        Finds a randomly selected template from the database or generates a new template
-        if there are no templates or if generate flag is true.
-        """
-        raise NotImplementedError("AI logic to find or generate template needs implementation.")
 
     def fetch_or_generate_resources(
         self, 

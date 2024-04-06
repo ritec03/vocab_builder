@@ -336,7 +336,7 @@ class TestSaveUserLessonData(unittest.TestCase):
         """
         Test with a list that contains two evaluations, each of which contains two history entries.
         """
-        task = Task(template="Test Template", resources=["test", "study"], learning_items=set())
+        task = Task(template_name="Test Template", resources=["test", "study"], learning_items=set())
         evaluation1 = Evaluation()
         evaluation1.add_entry(task, "Response 1", [Score(word_id=1, score=5)], None)
         evaluation1.add_entry(task, "Response 2", [Score(word_id=2, score=8)], None)
