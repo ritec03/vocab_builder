@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Set, Tuple
 from data_structures import LexicalItem, Score
-from database import fetch_tasks, save_user_lesson_data
 from task import Evaluation, Task
 
 class ErrorCorrectionStrategy(ABC):
@@ -188,31 +187,6 @@ class LessonGenerator():
         raise NotImplementedError()
 
     def generate_lesson_plan(self, words:Set[LexicalItem], user_lesson_history: List[Evaluation]) -> List[Tuple[Task, List[str]]]:
-        raise NotImplementedError()
-    
-class TaskFactory:
-    def __init__(self):
-        pass
-
-    def get_tasks_for_words(self, target_words: Set[str], criteria: List) -> List[Task]:
-        """
-        Retrieves or generates tasks based on the target set of words and additional criteria.
-        
-        :param target_words: The set of target words for which to find or generate tasks.
-        :param criteria: A list of criteria objects to apply in task selection.
-        :return: A list of Task objects.
-        """
-        tasks = fetch_tasks(criteria)
-        if tasks:
-            return tasks
-        else:
-            return [self.generate_task(target_words, criteria)]
-
-    def generate_task(self, target_words: Set[str], criteria: List) -> Task:
-        """
-        Generates a new task based on the target words and criteria.
-        This method is a placeholder and should be implemented based on specific needs.
-        """
         raise NotImplementedError()
 
 class Session():
