@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Tuple
 import copy
 from data_structures import LexicalItem, Score
 from string import Template
@@ -164,7 +164,7 @@ class TaskFactory:
         :return: A list of Task objects.
         """
         # tasks = db.fetch_tasks(criteria)
-        tasks = [] # NOTE for now
+        tasks = [] # NOTE nothing for now
         if tasks:
             return tasks[0] # NOTE for now just return the first task
         else:
@@ -188,11 +188,94 @@ class TaskGenerator(ABC):
     """
     The abstract class defines a component responsible for generation of
     tasks based on criteria.
+
+    This class will receive a list of target lexical items (words) and find a task template,
+    resources and answer in the database or generate appropriate ones.
+    The class will also receive an optional template id to use.
     """
-    pass
+
+    @abstractmethod
+    def find_or_generate_template(self, target_words: Set[LexicalItem], generate = False) -> TaskTemplate:
+        """
+        Finds a randomly selected template from the database or generates a new template
+        if there are no tempaltes or if generate flag is true.
+
+        Returns:
+            A TaskTemplate object
+        """
+        pass
+
+    @abstractmethod
+    def fetch_or_generate_resources(
+            self, 
+            template: TaskTemplate, 
+            target_words: Set[LexicalItem], 
+            generate = False
+        ) -> Tuple[Dict[str, Resource], str]:
+        """
+        Fetches or generates resources required by a task template, aiming to cover the target lexical items.
+        Missing resources will be covered by generation or if generate flag is True, all resources will be generated.
+
+        Args:
+            template: The TaskTemplate object for which resources are required.
+            target_words: A set of LexicalItem objects that the task aims to help the user learn.
+
+        Returns:
+            A dictionary mapping template parameter identifiers to Resource objects.
+            An answer string for the task
+        """
+        pass
+
+    def create_task(
+            self, 
+            target_words: Set[LexicalItem], 
+            answer: str=None, 
+            template: TaskTemplate=None, 
+            resources: Dict[str, Resource]=None,
+            generate=False
+        ) -> Task:
+        """
+        Creates a Task object from the template, resources, and correct answer.
+
+        Args:
+            template: The TaskTemplate object used for the task.
+            resources: A dictionary mapping identifiers to Resource objects.
+            answer: A string representing the correct answer for the task.
+            target_words: A set of LexicalItem objects that the task aims to help the user learn.
+            generate: whether or not to generate the template and resources
+
+        Returns:
+            A Task object.
+        """
+        if not template:
+            template = self.find_or_generate_template(target_words, generate)
+        if not resources:
+            resources, answer = self.fetch_or_generate_resources(template, target_words, generate)
+        if not answer:
+            raise Exception("Answer is not provided.")
+
+        return Task(template, resources, target_words, answer)
+        
 
 class ManualTaskGenerator(TaskGenerator):
     pass
 
 class AITaskGenerator(TaskGenerator):
-    pass
+    def find_or_generate_template(self, target_words: Set[LexicalItem], generate: bool = False) -> TaskTemplate:
+        """
+        Finds a randomly selected template from the database or generates a new template
+        if there are no templates or if generate flag is true.
+        """
+        raise NotImplementedError("AI logic to find or generate template needs implementation.")
+
+    def fetch_or_generate_resources(
+        self, 
+        template: TaskTemplate, 
+        target_words: Set[LexicalItem], 
+        generate: bool = False
+    ) -> Tuple[Dict[str, Resource], str]:
+        """
+        Fetches or generates resources required by a task template, aiming to cover the target lexical items.
+        Missing resources will be covered by generation or if generate flag is True, all resources will be generated.
+        """
+        raise NotImplementedError("AI logic to fetch or generate resources needs implementation.")
