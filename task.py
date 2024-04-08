@@ -1,75 +1,15 @@
 from abc import ABC, abstractmethod
+import json
 from typing import List, Set, Dict, Tuple
 import copy
 from data_structures import LexicalItem, Score
-from string import Template
-from dataclasses import dataclass
+from llm_chains import create_task_generation_chain
+from task_template import Resource, TaskTemplate
 
-# from database import DatabaseManager
-
-@dataclass
-class Resource():
-    resource_id: int
-    resource_string: str
-
-class TaskTemplate():
-    def __init__(
-            self,
-            template_id: int, 
-            template_string: str, 
-            template_description: str,
-            template_examples: List[str],
-            parameter_description: Dict[str, str]
-        ):
-        """
-        template id should be a valid int
-        template string should be a non-empty string
-        description should be a non-empty string
-        examples should have at least one string entry
-        parameter description should have correct argument number
-            and should describe the parameters that go into the template
-        """
-        if not isinstance(template_id, int):
-            raise ValueError("Passed id that is not an integer")
-        elif not template_string or not isinstance(template_string, str):
-            raise ValueError("Template string s empty or not a string.")
-        elif not template_description or not isinstance(template_description, str):
-            raise ValueError("Template description is empty or not a string.")
-        elif not isinstance(template_examples, List) or not template_examples:
-            raise ValueError("Template examples is empty list or not a list.")
-
-        self.id = template_id
-        self.template = Template(template_string)
-        self.description = template_description
-        self.examples = template_examples
-        self.parameter_description = parameter_description
-
-        try:
-            self.template.substitute(self.parameter_description)
-        except:
-            raise ValueError("Parameter description contains wrong parameter number.")
-
-        # if not self.template.is_valid():
-        #     raise ValueError("Template is not a valid template")
-        self.identifiers = [key for key, value in self.parameter_description.items()]
-
-    def substitute(self, resources: Dict[str, Resource]) -> str:
-        """
-        Produce filled template string using provided dictionary of resources.
-        The produvided dictionary must be compatible with this template.
-        """
-        resource_strings = {key: resource.resource_string for key, resource in resources.items()}
-        filled_template = self.template.substitute(resource_strings)
-        return filled_template
-    
-    def substitute_dummy(self) -> str:
-        """
-        Substitutes all parameters in the string with [PLACEHOLDER] string
-        instead of actual resources.
-        """
-        dummy_resource_strings = {param: '[PLACEHOLDER]' for param in self.parameter_description}
-        filled_template = self.template.substitute(dummy_resource_strings)
-        return filled_template
+# TODO make task creation and template object handling clearer
+# TODO add diversification into gpt prompts
+# TODO write code for resource saving into database
+# TODO create example templates manually
 
 class EvaluationMethod(ABC):
     """
@@ -77,7 +17,7 @@ class EvaluationMethod(ABC):
     It operates with gold standard answer, user answer and a context (such as task).
     Context is defined by a class that uses the evaluation (such as by a concrete task class).
     """
-    def __init__(self, context: Dict[str, str]):
+    def __init__(self, context: Dict[str, str] = None):
         self.context = context
 
     @abstractmethod
@@ -199,6 +139,7 @@ class OneWayTranslaitonTask(Task):
         task_template = TaskTemplate(
             template_id=1,
             template_string=template_string,
+            template_description="description",
             template_examples=["example one", "example two"],
             parameter_description={
                 "sentence": "sentence in target langauge to be translated into english."
@@ -303,8 +244,8 @@ class TaskGenerator(ABC):
     def create_task(
             self, 
             target_words: Set[LexicalItem], 
+            template: TaskTemplate, 
             answer: str=None, 
-            template: TaskTemplate=None, 
             resources: Dict[str, Resource]=None,
             generate=False
         ) -> Task:
@@ -326,7 +267,7 @@ class TaskGenerator(ABC):
         if not answer:
             raise Exception("Answer is not provided.")
 
-        return Task(template, resources, target_words, answer)
+        return OneWayTranslaitonTask(template, resources, target_words, answer)
         
 
 class ManualTaskGenerator(TaskGenerator):
@@ -346,4 +287,20 @@ class AITaskGenerator(TaskGenerator):
 
         Pass target words, template and parameter description to AI.
         """
-        raise NotImplementedError("AI logic to fetch or generate resources needs implementation.")
+        # create the chain
+        chain = create_task_generation_chain(template)
+        # apply the chain to the word list
+        output_dict = chain.invoke({"target_words": target_words.pop().item }) # TODO update this code
+        print(output_dict)
+        # parse the chain with exception handling
+
+        # Check that output contains all keys of template.parameter_description. Raise exception otherwise
+        if not set(template.parameter_description.keys()).issubset(output_dict.keys()):
+            raise Exception("Output does not contain all keys of template.parameter_description")
+        
+        # Separate answer key-value pair from output (and remove that key from output), then return tuple (Dict of parameter-resource, answer)
+        answer = output_dict.pop('answer', None)
+
+        # Generate resource tuple
+        resource_dict = {param: Resource(resource_id=None, resource_string=value) for param, value in output_dict.items()}
+        return resource_dict, answer
