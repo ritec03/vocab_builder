@@ -18,7 +18,7 @@ class TaskTemplate():
             template_id: int, 
             template_string: str, 
             template_description: str,
-            tempplate_examples: List[str],
+            template_examples: List[str],
             parameter_description: Dict[str, str]
         ):
         """
@@ -35,13 +35,13 @@ class TaskTemplate():
             raise ValueError("Template string s empty or not a string.")
         elif not template_description or not isinstance(template_description, str):
             raise ValueError("Template description is empty or not a string.")
-        elif not isinstance(tempplate_examples, List) or not tempplate_examples:
+        elif not isinstance(template_examples, List) or not template_examples:
             raise ValueError("Template examples is empty list or not a list.")
 
         self.id = template_id
         self.template = Template(template_string)
         self.description = template_description
-        self.examples = tempplate_examples
+        self.examples = template_examples
         self.parameter_description = parameter_description
 
         try:
@@ -61,6 +61,15 @@ class TaskTemplate():
         resource_strings = {key: resource.resource_string for key, resource in resources.items()}
         filled_template = self.template.substitute(resource_strings)
         return filled_template
+    
+    def substitute_dummy(self) -> str:
+        """
+        Substitutes all parameters in the string with [PLACEHOLDER] string
+        instead of actual resources.
+        """
+        dummy_resource_strings = {param: '[PLACEHOLDER]' for param in self.parameter_description}
+        filled_template = self.template.substitute(dummy_resource_strings)
+        return filled_template
 
 class EvaluationMethod(ABC):
     """
@@ -79,13 +88,27 @@ class EvaluationMethod(ABC):
         """
         pass
 
+class ExactMatchingEvaluation(EvaluationMethod):
+    """
+    Evaluation method for exact string matching.
+    Case insensitive.
+    """
+    def evaluate(self, gold_standard:str, user_answer: str, target_words: List[LexicalItem]):
+        """
+        Evaluate user answer against gold standard using exact string matching.
+        """
+        if gold_standard.lower().strip() == user_answer.lower().strip():
+            return True
+        else:
+            return False
+
 class Task(ABC):
     def __init__(
             self, 
             template_name: str, 
             resources: Dict[str, Resource], 
             learning_items: Set[LexicalItem],
-            asnwer: str
+            answer: str
         ):
         """
         Initialize a new task with a template and resources and evaluation method.
@@ -99,7 +122,7 @@ class Task(ABC):
             raise ValueError("Template identifiers do not match resource keys")
         self.resources = resources
         self.learning_items = learning_items
-        self.correctAnswer = asnwer  # This should be set by subclasses where the task is fully defined.
+        self.correctAnswer = answer  # This should be set by subclasses where the task is fully defined.
         self.evaluation_method = self.initialize_evaluation_method()
 
     @abstractmethod
@@ -147,6 +170,41 @@ class Task(ABC):
         new_evaluation = copy.deepcopy(evaluation)
         new_evaluation.add_entry(self, user_input, evaluation_result)
         return new_evaluation
+    
+class OneWayTranslaitonTask(Task):
+    """
+    Defines a simple translation task that contains a task description,
+    a single string to be translated from the target language into english.
+    """
+    def __init__(
+            self, 
+            template_name: str, 
+            resources: Dict[str, Resource], 
+            learning_items: Set[LexicalItem],
+            answer: str      
+    ):
+        super().__init__(template_name, resources, learning_items, answer)
+
+    def initialize_evaluation_method(self) -> EvaluationMethod:
+        return ExactMatchingEvaluation()
+
+    def get_template(self, template_name: str) -> TaskTemplate:
+        """
+        Dummy implementation for now
+        """
+        template_string = (
+            "Translate the following into English:\n" +
+            "   '$sentence'"
+        )
+        task_template = TaskTemplate(
+            template_id=1,
+            template_string=template_string,
+            template_examples=["example one", "example two"],
+            parameter_description={
+                "sentence": "sentence in target langauge to be translated into english."
+            }
+        )
+        return task_template
 
 class HistoryEntry:
     def __init__(self, task: Task, response: str, evaluation_result: List[Score], correction=None):
@@ -285,5 +343,7 @@ class AITaskGenerator(TaskGenerator):
         """
         Fetches or generates resources required by a task template, aiming to cover the target lexical items.
         Missing resources will be covered by generation or if generate flag is True, all resources will be generated.
+
+        Pass target words, template and parameter description to AI.
         """
         raise NotImplementedError("AI logic to fetch or generate resources needs implementation.")
