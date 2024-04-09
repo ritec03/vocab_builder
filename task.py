@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
+import random
 from typing import List, Set, Dict, Tuple
 import copy
-from data_structures import LexicalItem, Score, TaskType
+from data_structures import MAX_SCORE, MIN_SCORE, LexicalItem, Score, TaskType
 from llm_chains import create_task_generation_chain
 from task_template import Resource, TaskTemplate, TemplateRetriever
 
@@ -19,7 +20,7 @@ class EvaluationMethod(ABC):
         self.context = context
 
     @abstractmethod
-    def evaluate(self, gold_standard:str, user_answer: str, target_words: List[LexicalItem]):
+    def evaluate(self, gold_standard:str, user_answer: str, target_words: List[LexicalItem]) -> List[Score]:
         """
         Method that evaluates user answer against the gold standard with
         consideration of the context.
@@ -31,14 +32,15 @@ class ExactMatchingEvaluation(EvaluationMethod):
     Evaluation method for exact string matching.
     Case insensitive.
     """
-    def evaluate(self, gold_standard:str, user_answer: str, target_words: List[LexicalItem]):
+    def evaluate(self, gold_standard:str, user_answer: str, target_words: List[LexicalItem]) -> List[Score]:
         """
         Evaluate user answer against gold standard using exact string matching.
         """
         if gold_standard.lower().strip() == user_answer.lower().strip():
-            return True
+            return [Score(word.id, MAX_SCORE) for word in target_words]
         else:
-            return False
+            return [Score(word.id, MIN_SCORE) for word in target_words]
+
 
 class Task(ABC):
     def __init__(
@@ -180,10 +182,11 @@ class Evaluation:
         }
 
 class TaskFactory:
+    """Either retrieves or generates a task"""
     def __init__(self):
         pass
 
-    def get_task_for_word(self, target_words: Set[str], criteria: List) -> Task:
+    def get_task_for_word(self, target_words: Set[LexicalItem], criteria: List=[]) -> Task:
         """
         Retrieves or generates tasks based on the target set of words and additional criteria.
         
@@ -192,13 +195,13 @@ class TaskFactory:
         :return: A list of Task objects.
         """
         # tasks = db.fetch_tasks(criteria)
-        tasks = [] # NOTE nothing for now
+        tasks = [] # NOTE task fetching from db is not implemented yet
         if tasks:
             return tasks[0] # NOTE for now just return the first task
         else:
             return self.generate_task(target_words, criteria)
 
-    def generate_task(self, target_words: Set[str], criteria: List) -> Task:
+    def generate_task(self, target_words: Set[LexicalItem], criteria: List=[]) -> Task:
         """
         Generates a new task based on the target words and criteria.
         This method should be invoked when there are not tasks that
@@ -209,21 +212,26 @@ class TaskFactory:
         satisfying criteria for task generation (ignore other criteria),
         choosing resources and saving the task.
         """
-        raise NotImplementedError()
-    
+        # NOTE choose task type at random for now and only use AI
+        task_generator = AITaskGenerator()
+        task_type = random.choice(list(TaskType))
+        task = task_generator.create_task(target_words, task_type)
+        return task
+
 
 class TaskGenerator(ABC):
     """
     The abstract class defines a component responsible for generation of
     tasks based on criteria.
     """
+    # TODO think about what to do when only subset of resources in the database
+    # - generate the rest?
 
     @abstractmethod
     def fetch_or_generate_resources(
             self, 
             template: TaskTemplate, 
             target_words: Set[LexicalItem], 
-            generate = False
         ) -> Tuple[Dict[str, Resource], str]:
         """
         Fetches or generates resources required by a task template, aiming to cover the target lexical items.
@@ -245,7 +253,6 @@ class TaskGenerator(ABC):
             task_type: TaskType,
             answer: str=None, 
             resources: Dict[str, Resource]=None,
-            generate=False
         ) -> Task:
         """
         Creates a Task object from the template, resources, and correct answer.
@@ -260,9 +267,10 @@ class TaskGenerator(ABC):
         Returns:
             A Task object.
         """
+        # TODO think about logic for choosing templates
         template = TemplateRetriever().get_random_template(task_type)
         if not resources:
-            resources, answer = self.fetch_or_generate_resources(template, target_words, generate)
+            resources, answer = self.fetch_or_generate_resources(template, target_words)
         if not answer:
             raise Exception("Answer is not provided.")
 
@@ -280,11 +288,9 @@ class AITaskGenerator(TaskGenerator):
         self, 
         template: TaskTemplate, 
         target_words: Set[LexicalItem], 
-        generate: bool = False
     ) -> Tuple[Dict[str, Resource], str]:
         """
         Fetches or generates resources required by a task template, aiming to cover the target lexical items.
-        Missing resources will be covered by generation or if generate flag is True, all resources will be generated.
 
         Pass target words, template and parameter description to AI.
         """

@@ -3,6 +3,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, unique
 from typing import Optional, Set
+
+MAX_USER_NAME_LENGTH = 20
+MAX_SCORE = 10
+MIN_SCORE = 0
  
 @unique
 class TaskType(Enum):

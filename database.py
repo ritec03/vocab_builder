@@ -7,12 +7,9 @@ import sqlite3
 from sqlite3 import IntegrityError, Connection
 import pandas as pd
 from typing import List, Tuple
-from data_structures import Score
+from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, Score
 from task import Evaluation, Task
 
-MAX_USER_NAME_LENGTH = 20
-MAX_SCORE = 10
-MIN_SCORE = 0
 DATABASE_PATH = "vocabulary_app.db"
 SCHEMA_PATH = "schema.sql"
 

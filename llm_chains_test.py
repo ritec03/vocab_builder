@@ -1,6 +1,6 @@
 
 from data_structures import LexicalItem, TaskType
-from task import AITaskGenerator
+from task import AITaskGenerator, TaskFactory
 
 # # create template
 # template_string = (
@@ -31,5 +31,8 @@ ai_task_generator = AITaskGenerator()
 # print(answer)
 
 
-task = ai_task_generator.create_task(target_words, TaskType.ONE_WAY_TRANSLATION)
+# task = ai_task_generator.create_task(target_words, TaskType.ONE_WAY_TRANSLATION)
+# print(task.produce_task())
+
+task = TaskFactory().get_task_for_word(target_words)
 print(task.produce_task())
