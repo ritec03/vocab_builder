@@ -1,7 +1,12 @@
 from ast import List, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum, unique
 from typing import Optional, Set
+ 
+@unique
+class TaskType(Enum):
+    ONE_WAY_TRANSLATION = 1
 
 @dataclass
 class Score():

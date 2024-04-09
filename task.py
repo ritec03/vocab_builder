@@ -1,12 +1,10 @@
 from abc import ABC, abstractmethod
-import json
 from typing import List, Set, Dict, Tuple
 import copy
-from data_structures import LexicalItem, Score
+from data_structures import LexicalItem, Score, TaskType
 from llm_chains import create_task_generation_chain
-from task_template import Resource, TaskTemplate
+from task_template import Resource, TaskTemplate, TemplateRetriever
 
-# TODO make task creation and template object handling clearer
 # TODO add diversification into gpt prompts
 # TODO write code for resource saving into database
 # TODO create example templates manually
@@ -244,7 +242,7 @@ class TaskGenerator(ABC):
     def create_task(
             self, 
             target_words: Set[LexicalItem], 
-            template: TaskTemplate, 
+            task_type: TaskType,
             answer: str=None, 
             resources: Dict[str, Resource]=None,
             generate=False
@@ -262,19 +260,22 @@ class TaskGenerator(ABC):
         Returns:
             A Task object.
         """
+        template = TemplateRetriever().get_random_template(task_type)
         if not resources:
             resources, answer = self.fetch_or_generate_resources(template, target_words, generate)
         if not answer:
             raise Exception("Answer is not provided.")
 
-        return OneWayTranslaitonTask(template, resources, target_words, answer)
+        if task_type == TaskType.ONE_WAY_TRANSLATION:
+            return OneWayTranslaitonTask(template, resources, target_words, answer)
+        else:
+            raise Exception("Unsupported task type.")
         
 
 class ManualTaskGenerator(TaskGenerator):
     pass
 
 class AITaskGenerator(TaskGenerator):
-
     def fetch_or_generate_resources(
         self, 
         template: TaskTemplate, 
@@ -290,16 +291,18 @@ class AITaskGenerator(TaskGenerator):
         # create the chain
         chain = create_task_generation_chain(template)
         # apply the chain to the word list
+        # TODO add retry logic
         output_dict = chain.invoke({"target_words": target_words.pop().item }) # TODO update this code
-        print(output_dict)
-        # parse the chain with exception handling
 
         # Check that output contains all keys of template.parameter_description. Raise exception otherwise
         if not set(template.parameter_description.keys()).issubset(output_dict.keys()):
-            raise Exception("Output does not contain all keys of template.parameter_description")
+            raise ValueError("Output does not contain all keys of template.parameter_description")
         
         # Separate answer key-value pair from output (and remove that key from output), then return tuple (Dict of parameter-resource, answer)
         answer = output_dict.pop('answer', None)
+
+        if answer == None:
+            raise ValueError("Answer is absent from the LLM output.")
 
         # Generate resource tuple
         resource_dict = {param: Resource(resource_id=None, resource_string=value) for param, value in output_dict.items()}

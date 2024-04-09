@@ -2,6 +2,7 @@ from typing import List, Dict
 from langchain_core.pydantic_v1 import BaseModel, Field, validator
 from string import Template
 from dataclasses import dataclass
+from data_structures import TaskType
 
 @dataclass
 class Resource():
@@ -106,3 +107,27 @@ class TaskTemplate():
         dynamic_class = type('DynamicTemplateParameters', (BaseModel,), attributes)
 
         return dynamic_class
+    
+class TemplateRetriever():    
+    def get_random_template(self, task_type):
+        """provide a random template that adheres to the type"""
+        if task_type == TaskType.ONE_WAY_TRANSLATION:
+            template_string = (
+                "Translate the following into English:\n" +
+                "   '$sentence'"
+            )
+            task_template = TaskTemplate(
+                template_id=1,
+                template_string=template_string,
+                template_description="description",
+                template_examples=["example one", "example two"],
+                parameter_description={
+                    "sentence": "sentence in target language to be translated into english."
+                }
+            )   
+            return task_template
+        else:
+            raise ValueError("No such task type exists.")
+    
+    def get_template_by_name(self, template_name):
+        pass
