@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import List, Set, Tuple
 from data_structures import LexicalItem, Score
-from task import Evaluation, Task
+from database import DatabaseManager
+from task import Evaluation, Task, TaskFactory
 
 class ErrorCorrectionStrategy(ABC):
     @abstractmethod
@@ -81,12 +82,12 @@ class ExerciseSequence:
 
         :reutrn: The evaluation result as a new and updated object.
         """
-        if self.attempt_count == len(self.strategies_sequence):
-            return evaluation
-        elif self.attempt_count == 0:
+        if self.attempt_count == 0:
             # NOTE get user response here - very simple for now
             user_response = input(self.task.produce_task())
             evaluation = self.task.get_evaluation(user_response, evaluation)
+        elif self.attempt_count == len(self.strategies_sequence):
+            return evaluation
         elif self.attempt_count > 0:
             strategy_key = self.strategies_sequence[self.attempt_count]
             strategy = self.get_strategy_object(strategy_key)
@@ -166,28 +167,54 @@ class LessonGenerator():
     Based on this information a lesson plan is created with tasks,
     error correction strategies and target words.
     """
-    def __init__(self, user_id: int):
+    def __init__(self, user_id: int, db: DatabaseManager):
         self.user_id = user_id
+        self.db = db
 
     def generate_lesson(self) -> Lesson:
+        # NOTE later also take into account user lesson history
         # retrieve user learning data
         # retrieve user lesson evaluation history
-        user_word_scores, user_lesson_history = self.retrieve_user_data()
+        user_word_scores = self.retrieve_user_data()
         # choose target words
         target_words = self.choose_target_words(user_word_scores)
         # generate lesson plan
-        lesson_plan = self.generate_lesson_plan(target_words, user_lesson_history)
+        lesson_plan = self.generate_lesson_plan(target_words)
         # return lesson
         return Lesson(target_words, lesson_plan)
     
-    def retrieve_user_data() -> Tuple[List[Score], List[Evaluation]]:
-        raise NotImplementedError()
-    
-    def choose_target_words(self, user_scores: List[Score]) -> Set[LexicalItem]:
-        raise NotImplementedError()
+    def retrieve_user_data(self) -> List[Score]:
+        user_scores = self.db.retrieve_user_scores(self.user_id)
+        return user_scores
 
-    def generate_lesson_plan(self, words:Set[LexicalItem], user_lesson_history: List[Evaluation]) -> List[Tuple[Task, List[str]]]:
-        raise NotImplementedError()
+    def choose_target_words(self, user_scores: List[Score]) -> Set[LexicalItem]:
+        # TODO also take into account time last practiced later
+        # Choose 10 lowest scoring words or all if there are fewer than 10
+        lowest_scores = sorted(user_scores, key=lambda x: x.score)[:10]
+        lowest_words = {score.word for score in lowest_scores}
+
+        # Calculate how many new words are needed
+        num_new_words_needed = 15 - len(lowest_words)
+
+        # Retrieve new words if needed
+        if num_new_words_needed > 0:
+            new_words = self.db.retrieve_words_for_lesson(self.user_id, num_new_words_needed)
+        else:
+            new_words = set()
+
+        # Combine lowest scoring words and new words
+        target_words = lowest_words.union(new_words)
+
+        return target_words
+    
+    def generate_lesson_plan(self, words:Set[LexicalItem]) -> List[Tuple[Task, List[str]]]:
+        # NOTE create a dummy plan by using one-word items only for now and no error correction
+        task_factory = TaskFactory()
+        lesson_plan = []
+        for word in list(words):
+            task = task_factory.get_task_for_word({word})
+            lesson_plan.append((task, []))
+        return lesson_plan
 
 class Session():
     pass

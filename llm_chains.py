@@ -4,7 +4,11 @@ from secret import OPEN_AI_KEY
 from langchain.prompts import PromptTemplate
 from langchain_community.chat_models import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
+from langchain.output_parsers.fix import OutputFixingParser
 from task_template import TaskTemplate
+# import langchain
+
+# langchain.debug = True
 
 llm = ChatOpenAI(model="gpt-3.5-turbo-1106", temperature=0.7, openai_api_key=OPEN_AI_KEY, streaming=False)
 llm4 = ChatOpenAI(model="gpt-4", temperature=0.7, openai_api_key=OPEN_AI_KEY, streaming=False)
@@ -15,6 +19,8 @@ def create_task_generation_chain(task_template: TaskTemplate):
     # define json parser 
     output_json_parser = JsonOutputParser(pydantic_object=pydantic_class)
 
+    # TODO Create a template such that all words can be processed at once.
+    # could possibly require a better output fixing behaviour.
     task_generation_prompt = PromptTemplate(
         template="""
             You are a part of a program that helps with language learning.
@@ -27,7 +33,10 @@ def create_task_generation_chain(task_template: TaskTemplate):
             language.
             
             You role is to create these exercises with the provided template. The learners will then
-            solve the exerices you created.
+            solve the exerices you created. The target language is GERMAN. Do not provide resources
+            in other languages.
+
+            Do not say anything else, just return the well-formatted JSON string.
 
             {format_instructions}
 
@@ -45,20 +54,17 @@ def create_task_generation_chain(task_template: TaskTemplate):
     )
 
     chain = task_generation_prompt | llm4 | output_json_parser
-    return chain
+    return chain, output_json_parser
 
-"""
-            Example: the template may say "From all the words below complete the blank in the sentence:
-            $sentence. 1) $option1 2) $option2 3) $option3 4) option4." 
-            Parameter description may be : 'sentence' - sentence with a blank to be completed , 'option1'
-            first option for completion task, 'option2' second option, 'option3' third option, 'option4' fourth option.
-            The target words may be:  
-            ["erklären"]. 
-
-            Your task in this case would be to provide something like 
-            'sentence': "Die Regierung hat neue Richtlinien eingeführt, um die gefährdeten Arten in ihrem natürlichen Lebensraum zu _______."
-                'option1': erklären 
-                'option2': schützen 
-                'option3': verbessern
-                'option4': beobachten
-"""
+def invoke_chain(target_word: str, task_template: TaskTemplate):
+    chain, output_parser = create_task_generation_chain(task_template)
+    fix_parser = OutputFixingParser.from_llm(parser=output_parser, llm=llm4)
+    try:
+        output = chain.invoke({"target_words":target_word})
+    except:
+        try:
+            fix_parser(output)
+        except:
+            raise Exception("Both parsers failed.")
+        
+    return output

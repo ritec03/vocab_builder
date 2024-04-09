@@ -3,7 +3,7 @@ import random
 from typing import List, Set, Dict, Tuple
 import copy
 from data_structures import MAX_SCORE, MIN_SCORE, LexicalItem, Score, TaskType
-from llm_chains import create_task_generation_chain
+from llm_chains import create_task_generation_chain, invoke_chain
 from task_template import Resource, TaskTemplate, TemplateRetriever
 
 # TODO add diversification into gpt prompts
@@ -27,6 +27,7 @@ class EvaluationMethod(ABC):
         """
         pass
 
+# TODO create LLM-based evaluation.
 class ExactMatchingEvaluation(EvaluationMethod):
     """
     Evaluation method for exact string matching.
@@ -294,12 +295,7 @@ class AITaskGenerator(TaskGenerator):
 
         Pass target words, template and parameter description to AI.
         """
-        # create the chain
-        chain = create_task_generation_chain(template)
-        # apply the chain to the word list
-        # TODO add retry logic
-        output_dict = chain.invoke({"target_words": target_words.pop().item }) # TODO update this code
-
+        output_dict = invoke_chain(target_words.pop().item, template)  # TODO update this code
         # Check that output contains all keys of template.parameter_description. Raise exception otherwise
         if not set(template.parameter_description.keys()).issubset(output_dict.keys()):
             raise ValueError("Output does not contain all keys of template.parameter_description")

@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS template_parameters (
     template_id INTEGER,
     UNIQUE (template_id, name), -- Unique constraint for template_id and name combination
     FOREIGN KEY (template_id) REFERENCES template(id)
-)
+);
 
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY,

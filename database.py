@@ -6,8 +6,8 @@ import json
 import sqlite3
 from sqlite3 import IntegrityError, Connection
 import pandas as pd
-from typing import List, Tuple
-from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, Score
+from typing import List, Tuple, Set
+from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, LexicalItem, Score
 from task import Evaluation, Task
 
 DATABASE_PATH = "vocabulary_app.db"
@@ -92,24 +92,30 @@ class DatabaseManager:
         finally:
             cur.close()
 
-    def insert_user(self, user_name: str) -> None:
+    def insert_user(self, user_name: str) -> int:
         """
-        Insert a new user into the users table.
+        Insert a new user into the users table and return the user ID.
 
         Args:
             user_name (str): Username of the user to insert.
 
         Raises:
             ValueError: If the user already exists in the database.
-            ValueError: If the user name is not a string or is longer than MAX_USER_NAME_LENGTH
+            ValueError: If the user name is not a string or is longer than MAX_USER_NAME_LENGTH.
+
+        Returns:
+            int: The user ID of the newly inserted user.
         """
-        if type(user_name) is not str or len(user_name) > MAX_USER_NAME_LENGTH:
+        if not isinstance(user_name, str) or len(user_name) > MAX_USER_NAME_LENGTH:
             raise ValueError("Username is not a string or too long.")
+        
         cur = self.connection.cursor()
         try:
             cur.execute("INSERT INTO users (user_name) VALUES (?)", (user_name,))
             self.connection.commit()
-        except self.connection.IntegrityError:
+            user_id = cur.lastrowid  # Get the ID of the newly inserted row
+            return user_id
+        except IntegrityError:
             raise ValueError(f"User '{user_name}' already exists in the database.")
         finally:
             cur.close()
@@ -180,6 +186,7 @@ class DatabaseManager:
             cur.close()
 
     def update_user_scores(self, user_id: int, lesson_scores: List[Score]) -> None:
+        # TODO add timestamp to user scores (either from lesson histor or smt).
         """
         Update user scores for the lesson scores which is a list of scores
         for each word_id. If the word with a score for the user is already in db,
@@ -253,6 +260,34 @@ class DatabaseManager:
         serialized_data = json.dumps([evaluation.to_json() for evaluation in lesson_data])
         cur.execute("INSERT INTO user_lesson_history (user_id, evaluation_json) VALUES (?, ?)", (user_id, serialized_data))
         self.connection.commit()
+
+    def retrieve_words_for_lesson(self, user_id: int, word_num: int) -> Set[LexicalItem]:
+        """
+        Retrieves word_num words with highest frequency for which the user
+        with user_id does not have scores yet. The words should have pos of either
+        NOUN, ADJ or VERB.
+        """
+        # TODO add mechanism to choose pos
+        query = """
+            SELECT words.id, words.word, words.pos, words.freq
+            FROM words
+            LEFT JOIN learning_data ON words.id = learning_data.word_id AND learning_data.user_id = ?
+            WHERE learning_data.id IS NULL
+            AND words.pos IN ('NOUN', 'ADJ', 'VERB')
+            ORDER BY words.freq DESC
+            LIMIT ?
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, word_num))
+
+        # Fetch the results and create a set of LexicalItem objects
+        words = set()
+        for row in cursor.fetchall():
+            print(row)
+            index, word, pos, freq = row
+            words.add(LexicalItem(item=word, pos=pos, freq=freq, id=index))
+        
+        return words
 
 
     def fetch_tasks(self, criteria: List) -> List[Task]:
