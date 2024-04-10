@@ -1,11 +1,14 @@
 import json
-from typing import List
+from typing import Dict, List, Set
+from data_structures import LexicalItem
 from secret import OPEN_AI_KEY
 from langchain.prompts import PromptTemplate
 from langchain_community.chat_models import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
 from langchain.output_parsers.fix import OutputFixingParser
 from task_template import TaskTemplate
+from langchain_core.pydantic_v1 import BaseModel, Field
+
 # import langchain
 
 # langchain.debug = True
@@ -19,6 +22,7 @@ def create_task_generation_chain(task_template: TaskTemplate):
     # define json parser 
     output_json_parser = JsonOutputParser(pydantic_object=pydantic_class)
 
+    # TODO the resources should contain the exact word give? or at least its forms, not a derivative or related word
     # TODO Create a template such that all words can be processed at once.
     # could possibly require a better output fixing behaviour.
     task_generation_prompt = PromptTemplate(
@@ -56,11 +60,13 @@ def create_task_generation_chain(task_template: TaskTemplate):
     chain = task_generation_prompt | llm4 | output_json_parser
     return chain, output_json_parser
 
-def invoke_chain(target_word: str, task_template: TaskTemplate):
+def invoke_task_generation_chain(target_words: Set[LexicalItem], task_template: TaskTemplate):
+    word_list = ','.join(word.item for word in target_words)
+
     chain, output_parser = create_task_generation_chain(task_template)
     fix_parser = OutputFixingParser.from_llm(parser=output_parser, llm=llm4)
     try:
-        output = chain.invoke({"target_words":target_word})
+        output = chain.invoke({"target_words":word_list})
     except:
         try:
             fix_parser(output)
@@ -68,3 +74,65 @@ def invoke_chain(target_word: str, task_template: TaskTemplate):
             raise Exception("Both parsers failed.")
         
     return output
+
+class DynamicAIEvaluation(BaseModel):
+    data: Dict[str, int] = Field(description="Dynamic data with string keys that correspond to word ids and values corresponding to scores from 1 to 10.")
+
+def create_evaluation_chain():
+    output_json_parser = JsonOutputParser(pydantic_object=DynamicAIEvaluation)
+    task_generation_prompt = PromptTemplate(
+        template="""
+            You are a part of a program that helps with language learning.
+            Your goal is to evaluate user input for a task based on gold standard answer.
+            Each task tests certain target words, you are to examine user input and 
+            the task and the gold standard and assign a score to each of the target word. 
+            If the user completed a task in such a way that their understanding of the word is
+            good, the score is high.
+
+            You are to only provide a valid JSON string output that is a dictionary of
+            target word keys and score values.
+
+            {format_instructions}
+
+            The user is given the followin task: "{task}"
+            The gold standard answer is: "{gold_standard}"
+            The user's response is: "{user_response}"
+            The target words are: "{target_words}"
+            """,
+        input_variables=["task", "gold_standard", "user_response", "target_words"],
+        partial_variables={
+            "format_instructions": output_json_parser.get_format_instructions()
+        }
+    )
+
+    chain = task_generation_prompt | llm4 | output_json_parser
+    return chain, output_json_parser
+
+def invoke_evaluation_chain(
+        task_string: str,
+        gold_stadard: str,
+        user_answer: str,
+        target_words: Set[LexicalItem]
+    ) -> Dict[str, int]:
+    """
+    target_words - a comma separated list of words
+    """
+    word_list = ','.join(word.item for word in target_words)
+    chain, output_parser = create_evaluation_chain()
+    fix_parser = OutputFixingParser.from_llm(parser=output_parser, llm=llm4)
+    try:
+        output = chain.invoke(
+            {
+                "task": task_string,
+                "gold_standard": gold_stadard, 
+                "user_response": user_answer, 
+                "target_words":word_list
+            }
+        )
+    except:
+        try:
+            fix_parser(output)
+        except:
+            raise Exception("Both parsers failed.")
+        
+    return output["data"]

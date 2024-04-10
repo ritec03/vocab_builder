@@ -59,5 +59,8 @@ db.add_words_to_db(list_of_tuples)
 user_id = 1
 # generate lesson plan
 lesson_generator = LessonGenerator(user_id ,db)
-lesson_generator.generate_lesson()
+lesson = lesson_generator.generate_lesson()
+# create a test for lesson iteration
+lesson.perform_lesson()
 db.close()
+

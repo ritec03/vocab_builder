@@ -103,10 +103,15 @@ class ExerciseSequence:
         strategies and returns final evaluation.
         Implements stop criterion - score thershold?
         """
-        pass
+        evaluation = Evaluation()
+        evaluation = self.perform_run(evaluation)
+        for i in range(len(self.strategies_sequence)):
+            evaluation = self.perform_run(evaluation)
+
+        return evaluation
 
 # need a method in lesson generator that takes in a set of learning items, relevant user data and returns a list of tasks
-    # or a generator that generates tasks 
+    # or a generator that generates tasks
 
 class Lesson:
     def __init__(self, words: Set[LexicalItem], lesson_plan: List[Tuple[Task, List[str]]]):
@@ -128,9 +133,8 @@ class Lesson:
         Performs a single iteration of exercise sequence for a word from the set.
         """
         current_task, strategies_sequence = current_task_tuple
-        self.current_evaluation = Evaluation()
         self.exercise_sequence = ExerciseSequence(current_task, strategies_sequence)
-        self.evaluation_list.append(self.exercise_sequence.perform_sequence(self.current_evaluation))
+        self.evaluation_list.append(self.exercise_sequence.perform_sequence())
 
     def save_final_scores(self) -> None:
         """
