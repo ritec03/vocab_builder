@@ -1,5 +1,5 @@
 import unittest
-from task import TaskTemplate, Resource
+from task_template import TaskTemplate
 
 class TestTaskTemplate(unittest.TestCase):
     def test_template_id_int(self):

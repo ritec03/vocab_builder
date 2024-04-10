@@ -24,6 +24,12 @@ class LexicalItem():
         self.pos = pos
         self.freq = freq
         self.id = id
+
+@dataclass
+class Resource():
+    resource_id: int
+    resource: str
+    target_words: List[LexicalItem]
     
 @dataclass
 class TimePeriodCriterion:

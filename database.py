@@ -6,9 +6,10 @@ import json
 import sqlite3
 from sqlite3 import IntegrityError, Connection
 import pandas as pd
-from typing import List, Tuple, Set
-from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, LexicalItem, Score
+from typing import Dict, List, Tuple, Set
+from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, LexicalItem, Resource, Score, TaskType
 from task import Evaluation, Task
+from task_template import TaskTemplate
 
 DATABASE_PATH = "vocabulary_app.db"
 SCHEMA_PATH = "schema.sql"
@@ -122,6 +123,7 @@ class DatabaseManager:
 
     def remove_user(self, user_id: int) -> None:
         """
+        # TODO also delete data from the lesson data table
         Remove user with user_id from users table
         and remove all associated rows in learning_data.
 
@@ -288,7 +290,70 @@ class DatabaseManager:
             words.add(LexicalItem(item=word, pos=pos, freq=freq, id=index))
         
         return words
+    
+    """
+    METHODS FOR WORKING WITH TEMPLATES
+    """
+    def get_template_by_name(template_name: str) -> TaskTemplate:
+        pass
 
+    def get_templates_by_task_type(task_type: TaskType) -> List[TaskTemplate]:
+        pass
+
+    def add_template(
+            template_string: str, 
+            template_description: str,
+            template_examples: List[str],
+            parameter_description: Dict[str, str]
+        ) -> TaskTemplate:
+        """
+        Adds template to database and returns the new template id.
+        If a template with the same name exist, return value error.
+        """
+
+    def remove_template(template_name: str) -> None:
+        """
+        Removes template with template_name from the database and ALL
+        associated tasks that use this template.
+        """
+
+    """
+    METHODS FOR WORKING WITH RESOURCES
+    """
+
+    def add_resource(resource_str: str) -> Resource:
+        pass
+
+    def remove_resource() -> None:
+        """
+        Removes resource and all associated tasks associated with the resource
+        """
+        pass
+
+    def get_resources_by_target_words() -> List[Resource]:
+        pass
+
+    """
+    METHODS FOR WORKING WITH TASKS
+    """
+
+    def add_task():
+        """
+        Removes task from tasks and task_resources tables.
+        """
+        pass
+    
+    def remove_task():
+        """
+        Removes task from tasks and task_resources tables.
+        """
+        pass
+
+    def get_tasks_by_type():
+        pass
+
+    def get_tasks_by_template():
+        pass
 
     def fetch_tasks(self, criteria: List) -> List[Task]:
         query = self.compose_query_from_criteria(criteria)
@@ -307,6 +372,7 @@ class DatabaseManager:
             self.connection.close()
 
 db = DatabaseManager(DATABASE_PATH)
+
 db.create_db()
 
 word_freq_output_file_path = "word_freq.txt"
