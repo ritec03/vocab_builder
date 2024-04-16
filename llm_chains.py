@@ -1,4 +1,5 @@
 import json
+import random
 from typing import Dict, List, Set
 from data_structures import LexicalItem
 from secret import OPEN_AI_KEY
@@ -8,13 +9,43 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain.output_parsers.fix import OutputFixingParser
 from task_template import TaskTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
-
+# TODO Create a template such that all words can be processed at once.
 # import langchain
 
 # langchain.debug = True
 
 llm = ChatOpenAI(model="gpt-3.5-turbo-1106", temperature=0.7, openai_api_key=OPEN_AI_KEY, streaming=False)
 llm4 = ChatOpenAI(model="gpt-4", temperature=0.7, openai_api_key=OPEN_AI_KEY, streaming=False)
+
+def choose_topic():
+    topic_list = [
+        "Daily routine and personal life",
+        "Family and relationships",
+        "Food and dining",
+        "Shopping and bargaining",
+        "Transportation and directions",
+        "Weather and seasons",
+        "Work and career",
+        "Education and learning",
+        "Technology and gadgets",
+        " Arts and entertainment",
+        " Music and dance",
+        " Film and television",
+        " Literature and poetry",
+        " History and culture",
+        " Holidays and traditions",
+        " Sports and fitness",
+        " Health and wellness",
+        " Nature and environment",
+        " Politics and current affairs",
+        " Science and technology",
+        " Business and economy",
+        " Social media and communication",
+        " Fashion and style",
+        " Travel and tourism",
+        " Personal development and goal-setting",
+    ]
+    return " ,".join([random.choice(topic_list) for i in range(3)])
 
 def create_task_generation_chain(task_template: TaskTemplate): 
     # create pydantic class 
@@ -23,7 +54,6 @@ def create_task_generation_chain(task_template: TaskTemplate):
     output_json_parser = JsonOutputParser(pydantic_object=pydantic_class)
 
     # TODO the resources should contain the exact word give? or at least its forms, not a derivative or related word
-    # TODO Create a template such that all words can be processed at once.
     # could possibly require a better output fixing behaviour.
     task_generation_prompt = PromptTemplate(
         template="""
@@ -42,6 +72,8 @@ def create_task_generation_chain(task_template: TaskTemplate):
 
             Do not say anything else, just return the well-formatted JSON string.
 
+            Produce the resources that align with the following themes: {topics}
+            
             {format_instructions}
 
             Perform the task for the following:
@@ -53,7 +85,8 @@ def create_task_generation_chain(task_template: TaskTemplate):
             partial_variables={
                 "format_instructions": output_json_parser.get_format_instructions(),
                 "template": task_template.template.template,
-                "parameter_description": json.dumps(task_template.parameter_description)
+                "parameter_description": json.dumps(task_template.parameter_description),
+                "topics": choose_topic()
             }
     )
 
