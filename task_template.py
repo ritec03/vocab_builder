@@ -2,13 +2,7 @@ from typing import List, Dict
 from langchain_core.pydantic_v1 import BaseModel, Field, validator
 from string import Template
 from dataclasses import dataclass
-from data_structures import TaskType
-
-@dataclass
-class Resource():
-    resource_id: int
-    resource_string: str
-
+from data_structures import Resource, TaskType
 
 class TaskTemplate():
     def __init__(
@@ -17,7 +11,8 @@ class TaskTemplate():
             template_string: str, 
             template_description: str,
             template_examples: List[str],
-            parameter_description: Dict[str, str]
+            parameter_description: Dict[str, str],
+            task_type: TaskType
         ):
         """
         template id should be a valid int
@@ -27,6 +22,7 @@ class TaskTemplate():
         parameter description should have correct argument number
             and should describe the parameters that go into the template
         """
+        print(task_type)
         if not isinstance(template_id, int):
             raise ValueError("Passed id that is not an integer")
         elif not template_string or not isinstance(template_string, str):
@@ -35,12 +31,15 @@ class TaskTemplate():
             raise ValueError("Template description is empty or not a string.")
         elif not isinstance(template_examples, List) or not template_examples:
             raise ValueError("Template examples is empty list or not a list.")
+        elif task_type not in TaskType:
+            raise ValueError("Unknown task type.")
 
         self.id = template_id
         self.template = Template(template_string)
         self.description = template_description
         self.examples = template_examples
         self.parameter_description = parameter_description
+        self.task_type = task_type
 
         try:
             self.template.substitute(self.parameter_description)
@@ -56,7 +55,7 @@ class TaskTemplate():
         Produce filled template string using provided dictionary of resources.
         The produvided dictionary must be compatible with this template.
         """
-        resource_strings = {key: resource.resource_string for key, resource in resources.items()}
+        resource_strings = {key: resource.resource for key, resource in resources.items()}
         filled_template = self.template.substitute(resource_strings)
         return filled_template
     
@@ -108,26 +107,3 @@ class TaskTemplate():
 
         return dynamic_class
     
-class TemplateRetriever():    
-    def get_random_template(self, task_type):
-        """provide a random template that adheres to the type"""
-        if task_type == TaskType.ONE_WAY_TRANSLATION:
-            template_string = (
-                "Translate the following into English:\n" +
-                "   '$sentence'"
-            )
-            task_template = TaskTemplate(
-                template_id=1,
-                template_string=template_string,
-                template_description="description",
-                template_examples=["example one", "example two"],
-                parameter_description={
-                    "sentence": "sentence in target language to be translated into english."
-                }
-            )   
-            return task_template
-        else:
-            raise ValueError("No such task type exists.")
-    
-    def get_template_by_name(self, template_name):
-        pass

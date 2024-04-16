@@ -1,12 +1,15 @@
-from ast import List, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, unique
-from typing import Optional, Set
+from typing import Optional, Set, Tuple
+from math import floor
 
 MAX_USER_NAME_LENGTH = 20
 MAX_SCORE = 10
 MIN_SCORE = 0
+EXERCISE_THRESHOLD = MAX_SCORE/2
+NUM_WORDS_PER_LESSON = 2
+NUM_NEW_WORDS_PER_LESSON = floor(NUM_WORDS_PER_LESSON/3)
  
 @unique
 class TaskType(Enum):
@@ -25,11 +28,24 @@ class LexicalItem():
         self.freq = freq
         self.id = id
 
+    def __eq__(self, other):
+        if isinstance(other, LexicalItem):
+            return (
+                self.item == other.item 
+                and self.pos == other.pos 
+                and self.freq == other.freq 
+                and self.id == other.id
+            )
+        return False
+
+    def __hash__(self):
+        return hash((self.item, self.pos, self.freq, self.id))
+
 @dataclass
 class Resource():
     resource_id: int
     resource: str
-    target_words: List[LexicalItem]
+    target_words: Set[LexicalItem]
     
 @dataclass
 class TimePeriodCriterion:

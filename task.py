@@ -1,11 +1,9 @@
 from abc import ABC, abstractmethod
-import random
-from typing import List, Set, Dict, Tuple
+from typing import List, Set, Dict
 import copy
-from data_structures import LexicalItem, Score, TaskType
-from evaluation import AIEvaluation, EvaluationMethod
-from llm_chains import invoke_task_generation_chain
-from task_template import Resource, TaskTemplate, TemplateRetriever
+from data_structures import EXERCISE_THRESHOLD, LexicalItem, Score
+from evaluation_method import AIEvaluation, EvaluationMethod
+from task_template import Resource, TaskTemplate
 
 # TODO write code for resource saving into database
 # TODO create example templates manually
@@ -13,25 +11,27 @@ from task_template import Resource, TaskTemplate, TemplateRetriever
 class Task(ABC):
     def __init__(
             self, 
-            template_name: str, 
+            template: TaskTemplate, 
             resources: Dict[str, Resource], 
             learning_items: Set[LexicalItem],
-            answer: str
+            answer: str,
+            task_id: int
         ):
         """
         Initialize a new task with a template and resources and evaluation method.
         
-        :param template_name: name of the tempalte compatible with this task type
+        :param template: tempalte compatible with this task type
         :param resources: A dictionary of resources with identifiers and resources to fill the template.
         :param learning_items: a set of words to be learned.
         """
-        self.template = self.get_template(template_name)
+        self.template = template
         if set(self.template.identifiers) != set(resources.keys()):
             raise ValueError("Template identifiers do not match resource keys")
         self.resources = resources
         self.learning_items = learning_items
         self.correctAnswer = answer  # This should be set by subclasses where the task is fully defined.
         self.evaluation_method = self.initialize_evaluation_method()
+        self.id = task_id
 
     @abstractmethod
     def initialize_evaluation_method(self) -> EvaluationMethod:
@@ -39,14 +39,6 @@ class Task(ABC):
         Initialize evaluation method for this task type.
         """
         pass
-
-    @abstractmethod
-    def get_template(self, template_name: str) -> TaskTemplate:
-        """
-        Check that the template found at the template name is compatible with this
-        task class and if so return task tempalte, if not, raise an error
-        """
-        raise NotImplementedError("Get template is not implemented.")
 
     def produce_task(self) -> str:
         """
@@ -86,34 +78,16 @@ class OneWayTranslaitonTask(Task):
     """
     def __init__(
             self, 
-            template_name: str, 
+            template: TaskTemplate, 
             resources: Dict[str, Resource], 
             learning_items: Set[LexicalItem],
-            answer: str      
+            answer: str,
+            task_id: int
     ):
-        super().__init__(template_name, resources, learning_items, answer)
+        super().__init__(template, resources, learning_items, answer, task_id)
 
     def initialize_evaluation_method(self) -> EvaluationMethod:
         return AIEvaluation({"task": self.produce_task()})
-
-    def get_template(self, template_name: str) -> TaskTemplate:
-        """
-        Dummy implementation for now
-        """
-        template_string = (
-            "Translate the following into English:\n" +
-            "   '$sentence'"
-        )
-        task_template = TaskTemplate(
-            template_id=1,
-            template_string=template_string,
-            template_description="description",
-            template_examples=["example one", "example two"],
-            parameter_description={
-                "sentence": "sentence in target langauge to be translated into english."
-            }
-        )
-        return task_template
 
 class HistoryEntry:
     def __init__(self, task: Task, response: str, evaluation_result: List[Score], correction=None):
@@ -135,145 +109,36 @@ class Evaluation:
     def get_history(self):
         return self.history
     
-    def get_final_score(self) -> List[Score]:
+    def get_last_history(self) -> HistoryEntry:
+        return self.history[0]
+    
+    def get_last_scores(self) -> List[Score]:
         """
-        Returns final score for the evaluation,
-        which is the evaluation result of the last history entry
+        Returns final score for the last evaluation (history entry)
 
         :return: List[Score] a list of tuple of (word_id, score)
         """
-        raise NotImplementedError()
+        return self.get_last_history().evaluation_result
+
     
+    def get_last_low_scored_words(self) -> Set[LexicalItem]:
+        last_low_scored_word_ids = list(map(
+                (lambda x: x.word_id),
+                filter(
+                    (lambda x: x.score < EXERCISE_THRESHOLD),
+                    self.get_last_scores()
+                )
+            )
+        )
+        words_to_retry = list(filter(
+                (lambda x: x.id in last_low_scored_word_ids),
+                self.get_last_history().task.learning_items
+            )
+        )
+        return words_to_retry
+
     def to_json(self):
         return {
             "history": [entry.__dict__ for entry in self.history]
         }
 
-class TaskFactory:
-    """Either retrieves or generates a task"""
-    def __init__(self):
-        pass
-
-    def get_task_for_word(self, target_words: Set[LexicalItem], criteria: List=[]) -> Task:
-        """
-        Retrieves or generates tasks based on the target set of words and additional criteria.
-        
-        :param target_words: The set of target words for which to find or generate tasks.
-        :param criteria: A list of criteria objects to apply in task selection.
-        :return: A list of Task objects.
-        """
-        # tasks = db.fetch_tasks(criteria)
-        tasks = [] # NOTE task fetching from db is not implemented yet
-        if tasks:
-            return tasks[0] # NOTE for now just return the first task
-        else:
-            return self.generate_task(target_words, criteria)
-
-    def generate_task(self, target_words: Set[LexicalItem], criteria: List=[]) -> Task:
-        """
-        Generates a new task based on the target words and criteria.
-        This method should be invoked when there are not tasks that
-        satisfy the criteria in db.
-
-        The method will generate task using various means.
-        Generating a task will require choosing or creating template,
-        satisfying criteria for task generation (ignore other criteria),
-        choosing resources and saving the task.
-        """
-        # NOTE choose task type at random for now and only use AI
-        task_generator = AITaskGenerator()
-        task_type = random.choice(list(TaskType))
-        task = task_generator.create_task(target_words, task_type)
-        return task
-
-
-class TaskGenerator(ABC):
-    """
-    The abstract class defines a component responsible for generation of
-    tasks based on criteria.
-    """
-    # TODO think about what to do when only subset of resources in the database
-    # - generate the rest?
-
-    @abstractmethod
-    def fetch_or_generate_resources(
-            self, 
-            template: TaskTemplate, 
-            target_words: Set[LexicalItem], 
-        ) -> Tuple[Dict[str, Resource], str]:
-        """
-        Fetches or generates resources required by a task template, aiming to cover the target lexical items.
-        Missing resources will be covered by generation or if generate flag is True, all resources will be generated.
-
-        Args:
-            template: The TaskTemplate object for which resources are required.
-            target_words: A set of LexicalItem objects that the task aims to help the user learn.
-
-        Returns:
-            A dictionary mapping template parameter identifiers to Resource objects.
-            An answer string for the task
-        """
-        pass
-
-    def create_task(
-            self, 
-            target_words: Set[LexicalItem], 
-            task_type: TaskType,
-            answer: str=None, 
-            resources: Dict[str, Resource]=None,
-        ) -> Task:
-        """
-        Creates a Task object from the template, resources, and correct answer.
-
-        Args:
-            template: The TaskTemplate object used for the task.
-            resources: A dictionary mapping identifiers to Resource objects.
-            answer: A string representing the correct answer for the task.
-            target_words: A set of LexicalItem objects that the task aims to help the user learn.
-            generate: whether or not to generate the template and resources
-
-        Returns:
-            A Task object.
-        """
-        # TODO think about logic for choosing templates
-        template = TemplateRetriever().get_random_template(task_type)
-        if not resources:
-            resources, answer = self.fetch_or_generate_resources(template, target_words)
-        if not answer:
-            raise Exception("Answer is not provided.")
-
-        if task_type == TaskType.ONE_WAY_TRANSLATION:
-            return OneWayTranslaitonTask(template, resources, target_words, answer)
-        else:
-            raise Exception("Unsupported task type.")
-        
-
-class ManualTaskGenerator(TaskGenerator):
-    pass
-
-class AITaskGenerator(TaskGenerator):
-    def fetch_or_generate_resources(
-        self, 
-        template: TaskTemplate, 
-        target_words: Set[LexicalItem], 
-    ) -> Tuple[Dict[str, Resource], str]:
-        """
-        Fetches or generates resources required by a task template, aiming to cover the target lexical items.
-
-        Pass target words, template and parameter description to AI.
-        """
-        output_dict = invoke_task_generation_chain(target_words, template)
-        print(output_dict)
-        # Check that output contains all keys of template.parameter_description. Raise exception otherwise
-        if not set(template.parameter_description.keys()).issubset(output_dict.keys()):
-            raise ValueError("Output does not contain all keys of template.parameter_description")
-        
-        # Separate answer key-value pair from output (and remove that key from output), then return tuple (Dict of parameter-resource, answer)
-        answer = output_dict.pop('answer', None)
-
-        if answer == None:
-            raise ValueError("Answer is absent from the LLM output.")
-
-        # Generate resource tuple
-        resource_dict = {param: Resource(resource_id=None, resource_string=value) for param, value in output_dict.items()}
-        return resource_dict, answer

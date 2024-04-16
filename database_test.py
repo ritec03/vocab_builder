@@ -1,7 +1,7 @@
 import json
 import unittest
 import sqlite3
-from data_structures import Score
+from data_structures import LexicalItem, Resource, Score, TaskType
 from database import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, DatabaseManager, SCHEMA_PATH, ValueDoesNotExistInDB
 import os
 
@@ -357,6 +357,214 @@ class TestSaveUserLessonData(unittest.TestCase):
         self.assertEqual(len(saved_evaluations), 2)  # Ensure there are two evaluations saved
         self.assertEqual(len(saved_evaluations[0]['history']), 2)  # First evaluation has two history entries
         self.assertEqual(len(saved_evaluations[1]['history']), 2)  # Second evaluation has two history entries
+
+class TestAddTemplate(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+        self.db_manager.create_db()
+
+    def tearDown(self):
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_add_template_with_two_parameters(self):
+        """
+        Test adding a template with two parameters.
+        """
+        # Create a template with two parameters
+        template_string = (
+            "Translate the following into English:\n" +
+            "   '$sentence' and '$phrase'"
+        )
+        template_description = "Description of the template"
+        template_examples = ["Example one", "Example two"]
+        parameter_description = {
+            "sentence": "Sentence in target language to be translated into English.",
+            "phrase": "Phrase in target language to be translated into English."
+        }
+
+        # Add the template
+        added_template = self.db_manager.add_template(
+            template_string=template_string,
+            template_description=template_description,
+            template_examples=template_examples,
+            parameter_description=parameter_description,
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+
+        # Retrieve the template from the database
+        retrieved_template = self.db_manager.get_template_by_id(added_template.id)
+
+        # Verify that the retrieved template matches the added template
+        self.assertIsNotNone(retrieved_template)
+        self.assertEqual(retrieved_template.template.template, template_string)
+        self.assertEqual(retrieved_template.description, template_description)
+        self.assertEqual(retrieved_template.examples, template_examples)
+        self.assertEqual(retrieved_template.parameter_description, parameter_description)
+
+    # def test_add_template_with_duplicate_template_string(self):
+    #     """
+    #     Test adding a template with a duplicate name.
+    #     """
+    #     # Add a template with a specific name to the database
+    #     initial_template_name = "Test Template"
+    #     template_id = self.db_manager.add_template(
+    #         template_string="template_string_placeholder",
+    #         template_description="template_description_placeholder",
+    #         template_examples=["example1", "example2"],
+    #         parameter_description={"param1": "param1_description", "param2": "param2_description"},
+    #         task_type=TaskType.ONE_WAY_TRANSLATION
+    #     )
+
+    #     # Attempt to add another template with the same name
+    #     with self.assertRaises(ValueError):
+    #         self.db_manager.add_template(
+    #             template_string="template_string_placeholder",
+    #             template_description="template_description_placeholder",
+    #             template_examples=["example1", "example2"],
+    #             parameter_description={"param1": "param1_description", "param2": "param2_description"},
+    #             task_type=TaskType.ONE_WAY_TRANSLATION
+    #         )
+
+class TestAddResourceManual(unittest.TestCase):
+
+    def get_test_word_ids(self):
+        """
+        Helper method to retrieve test user and word IDs.
+        This method now returns a list of word IDs to handle multiple words.
+        """
+        word_ids = [
+            self.db_manager.connection.execute("SELECT id FROM words WHERE word=?", ("word1",)).fetchone()[0],
+            self.db_manager.connection.execute("SELECT id FROM words WHERE word=?", ("word2",)).fetchone()[0]
+        ]
+        return word_ids
+
+    def setUp(self):
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+        self.db_manager.create_db()
+
+        # Create some sample LexicalItem objects
+        # TODO add words to database first and get the words ids first 
+
+        self.db_manager.add_words_to_db([
+            ("word1", "noun", 10),
+            ("word2", "verb", 8)
+        ])
+
+        ids = self.get_test_word_ids()
+        self.lexical_item_1 = LexicalItem(item="word1", pos="noun", freq=10, id=ids[0])
+        self.lexical_item_2 = LexicalItem(item="word2", pos="verb", freq=8, id=ids[1])
+
+    def tearDown(self):
+        # Clean up resources after each test
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_add_resource_manual(self):
+        # Define resource string and target words
+        resource_str = "This is a sample resource string containing word1 and word2."
+        target_words = {self.lexical_item_1, self.lexical_item_2}
+
+        # Call the add_resource_manual function
+        added_resource = self.db_manager.add_resource_manual(resource_str, target_words)
+
+        # Check if the returned object is an instance of Resource
+        self.assertIsInstance(added_resource, Resource)
+
+        # Fetch the added resource from the database to verify its correctness
+        fetched_resource = self.db_manager.get_resource_by_id(added_resource.resource_id)
+
+        # Check if the fetched resource matches the added resource
+        self.assertEqual(fetched_resource.resource, resource_str)
+        print(fetched_resource.target_words)
+        print(target_words)
+        self.assertEqual(fetched_resource.target_words, target_words)
+
+class TestAddTask(unittest.TestCase):
+    def setUp(self):
+        # Initialize the database manager and create the test database
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+        self.db_manager.create_db()
+
+    def tearDown(self):
+        # Close the database connection and remove the test database file
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_add_task(self):
+        # add template
+        # Create a template with two parameters
+        template_string = (
+            "Translate the following into English:\n" +
+            "   '$sentence' and '$phrase'"
+        )
+        template_description = "Description of the template"
+        template_examples = ["Example one", "Example two"]
+        parameter_description = {
+            "sentence": "Sentence in target language to be translated into English.",
+            "phrase": "Phrase in target language to be translated into English."
+        }
+
+        # Add the template
+        added_template = self.db_manager.add_template(
+            template_string=template_string,
+            template_description=template_description,
+            template_examples=template_examples,
+            parameter_description=parameter_description,
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+        # add words 
+
+        self.db_manager.add_words_to_db([
+            ("word1", "noun", 10),
+            ("word2", "verb", 8)
+        ])
+
+        word_ids = [
+            self.db_manager.connection.execute("SELECT id FROM words WHERE word=?", ("word1",)).fetchone()[0],
+            self.db_manager.connection.execute("SELECT id FROM words WHERE word=?", ("word2",)).fetchone()[0]
+        ]
+
+        words = {LexicalItem("word1", "noun", 10, word_ids[0]), LexicalItem("word2", "verb", 8, word_ids[1])}
+
+        resource1 = self.db_manager.add_resource_manual('Resource 1', words)
+        resource2 = self.db_manager.add_resource_manual('Resource 2', words)
+
+        resources = {
+            'sentence': resource1,
+            'phrase': resource2
+        }
+        target_words = {
+            LexicalItem(item='word1', pos='noun', freq=10, id=word_ids[0]),
+            LexicalItem(item='word2', pos='verb', freq=8, id=word_ids[1])
+        }
+        answer = 'Sample answer'
+
+        # Add the task to the database
+        added_task = self.db_manager.add_task(added_template.id, resources, target_words, answer)
+
+        # Assert that the returned task object is not None
+        self.assertIsNotNone(added_task)
+
+        # Fetch the added task from the database to verify its correctness
+        fetched_task = self.db_manager.get_task_by_id(added_task.id)
+
+        # Assert that the fetched task matches the added task
+        self.assertEqual(fetched_task.template.id, added_template.id)
+        self.assertEqual(fetched_task.resources, resources)
+        self.assertEqual(fetched_task.learning_items, target_words)
+        self.assertEqual(fetched_task.correctAnswer, answer)
+
+
 
 
 if __name__ == '__main__':

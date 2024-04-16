@@ -6,9 +6,9 @@ import json
 import sqlite3
 from sqlite3 import IntegrityError, Connection
 import pandas as pd
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Optional, Tuple, Set
 from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, LexicalItem, Resource, Score, TaskType
-from task import Evaluation, Task
+from task import Evaluation, OneWayTranslaitonTask, Task
 from task_template import TaskTemplate
 
 DATABASE_PATH = "vocabulary_app.db"
@@ -294,22 +294,115 @@ class DatabaseManager:
     """
     METHODS FOR WORKING WITH TEMPLATES
     """
-    def get_template_by_name(template_name: str) -> TaskTemplate:
-        pass
+    def get_template_by_id(self, template_id: int) -> Optional[TaskTemplate]:
+        """
+        Retrieve a template from the database based on its ID.
+
+        Args:
+            template_id (int): The ID of the template to retrieve.
+
+        Returns:
+            Optional[TaskTemplate]: The retrieved template, or None if not found.
+        """
+        query = """
+            SELECT * 
+            FROM templates 
+            WHERE id = ?
+        """
+        cur = self.connection.cursor()
+        cur.execute(query, (template_id,))
+        template_row = cur.fetchone()
+
+        if template_row:
+            print(template_row)
+            # Extract template information from the row
+            template = TaskTemplate(
+                template_id=template_row[0],
+                template_string=template_row[2],
+                template_description=template_row[3],
+                template_examples=template_row[4].split('\n'),
+                parameter_description=self.get_template_parameters(template_id),
+                task_type=getattr(TaskType, template_row[1])
+            )
+            return template
+        else:
+            return None
+
+    def get_template_parameters(self, template_id: int) -> dict:
+        """
+        Retrieve parameter descriptions for a template from the database.
+
+        Args:
+            template_id (int): The ID of the template.
+
+        Returns:
+            dict: A dictionary mapping parameter names to descriptions.
+        """
+        query = """
+            SELECT name, description
+            FROM template_parameters
+            WHERE template_id = ?
+        """
+        cur = self.connection.cursor()
+        cur.execute(query, (template_id,))
+        parameter_rows = cur.fetchall()
+
+        parameters = {}
+        for row in parameter_rows:
+            parameters[row[0]] = row[1]
+
+        return parameters
 
     def get_templates_by_task_type(task_type: TaskType) -> List[TaskTemplate]:
         pass
 
     def add_template(
-            template_string: str, 
+            self,
+            template_string: str,
             template_description: str,
             template_examples: List[str],
-            parameter_description: Dict[str, str]
+            parameter_description: Dict[str, str],
+            task_type: TaskType
         ) -> TaskTemplate:
         """
         Adds template to database and returns the new template id.
         If a template with the same name exist, return value error.
         """
+        cur = self.connection.cursor()
+        try:
+            # Insert template into templates table
+            cur.execute("""
+                INSERT INTO templates (task_type, template, description, examples)
+                VALUES (?, ?, ?, ?)
+            """, (task_type.name, template_string, template_description, "\n".join(template_examples)))
+            template_id = cur.lastrowid
+
+            # Insert template parameters into template_parameters table
+            for param_name, param_desc in parameter_description.items():
+                cur.execute("""
+                    INSERT INTO template_parameters (name, description, template_id)
+                    VALUES (?, ?, ?)
+                """, (param_name, param_desc, template_id))
+
+            self.connection.commit()
+            print("Template added successfully.")
+            template = TaskTemplate(
+                template_id, 
+                template_string, 
+                template_description, 
+                template_examples, 
+                parameter_description, 
+                task_type
+            )
+            return template
+        except Exception as e:
+            # Handle any errors
+            print(f"Error occurred: {e}")
+            self.connection.rollback()
+            raise
+        finally:
+            cur.close()
+
 
     def remove_template(template_name: str) -> None:
         """
@@ -321,14 +414,77 @@ class DatabaseManager:
     METHODS FOR WORKING WITH RESOURCES
     """
 
-    def add_resource(resource_str: str) -> Resource:
+    def add_resource_manual(self, resource_str: str, target_words: Set[LexicalItem]) -> Resource:
+        """
+        To be used only when it is known for sure the resource contains
+        target words.
+
+        Args:
+            resource_str (str): The resource string to add to the database.
+            target_words (Set[LexicalItem]): Set of target words contained in the resource.
+
+        Returns:
+            Resource: The added resource object.
+        """
+        cur = self.connection.cursor()
+        try:
+            # Add resource to the resources table
+            cur.execute("INSERT INTO resources (resource_text) VALUES (?)", (resource_str,))
+            resource_id = cur.lastrowid
+
+            # Connect resources to words in target_words in resource_words table
+            for word in target_words:
+                cur.execute("INSERT INTO resource_words (resource_id, word_id) VALUES (?, ?)", (resource_id, word.id))
+
+            self.connection.commit()
+            print("Resource added successfully.")
+
+            return Resource(resource_id=resource_id, resource=resource_str, target_words=target_words)
+        except IntegrityError as e:
+            # Handle any integrity errors
+            raise Exception(f"Integrity error occurred: {e}")
+        finally:
+            cur.close()
+
+
+    def add_resource_auto(resource_str: str) -> Resource:
+        """
+        Add resource string as a task and try to match it to
+        lemmatized words
+        """
+        # add to resources table
+        # lemmatize using spacy, retrieve lemmas in words table
+        # add to resource_words table
         pass
 
-    def remove_resource() -> None:
+    def remove_resource(self) -> None:
         """
         Removes resource and all associated tasks associated with the resource
         """
         pass
+
+    def get_resource_by_id(self, resource_id: int) -> Resource:
+        cur = self.connection.cursor()
+        cur.execute("""
+                SELECT r.resource_text, w.word, w.pos, w.freq, w.id
+                FROM resources r
+                INNER JOIN resource_words rw ON r.id = rw.resource_id
+                INNER JOIN words w ON rw.word_id = w.id
+                WHERE r.id=?
+            """, (resource_id,))
+        # Fetch the result
+        result = cur.fetchall()
+        try:
+            if result:
+                resource_string = result[0][0]
+                target_words = {LexicalItem(item=row[1], pos=row[2], freq=row[3], id=row[4]) for row in result}
+                resource = Resource(resource_id, resource_string, target_words)
+                return resource
+            else:
+                # If resource is not found, raise an exception or return None
+                raise ValueError(f"No resource found with ID {resource_id}")
+        finally:
+            cur.close()
 
     def get_resources_by_target_words() -> List[Resource]:
         pass
@@ -336,14 +492,134 @@ class DatabaseManager:
     """
     METHODS FOR WORKING WITH TASKS
     """
+    def add_task(
+        self,
+        template_id: int,
+        resources: Dict[str, Resource],
+        target_words: Set[LexicalItem],
+        answer: str
+    ) -> Task:
+        """
+        Adds a new task to the database.
 
-    def add_task():
+        Args:
+            template_id (int): The ID of the template associated with the task.
+            resources (Dict[str, Resource]): A dictionary of resources with identifiers and resources to fill the template.
+            target_words (Set[LexicalItem]): A set of target words for the task.
+            answer (str): The correct answer for the task.
+
+        Returns:
+            Task: The added task object.
         """
-        Removes task from tasks and task_resources tables.
+        cur = self.connection.cursor()
+        try:
+            # Add task to tasks table
+            cur.execute("INSERT INTO tasks (template_id, answer) VALUES (?, ?)", (template_id, answer))
+            task_id = cur.lastrowid
+
+            # Find parameters associated with the template
+            cur.execute("SELECT id, name FROM template_parameters WHERE template_id = ?", (template_id,))
+            template_parameters = {param_name: param_id for param_id, param_name in cur.fetchall()}
+
+            # Connect resources to task and parameters in task_resources table
+            for param_name, resource in resources.items():
+                if param_name not in template_parameters:
+                    raise ValueError(f"No parameter found for '{param_name}' in the template.")
+
+                parameter_id = template_parameters[param_name]
+                cur.execute("INSERT INTO task_resources (task_id, resource_id, parameter_id) VALUES (?, ?, ?)",
+                            (task_id, resource.resource_id, parameter_id))
+
+            # Connect task to target words in task_target_words table
+            for word in target_words:
+                cur.execute("INSERT INTO task_target_words (task_id, word_id) VALUES (?, ?)", (task_id, word.id))
+
+            self.connection.commit()
+            print("Task added successfully.")
+
+            # Initialize the Task object
+            template = self.get_template_by_id(template_id)  # You need to implement this method
+
+            if template.task_type == TaskType.ONE_WAY_TRANSLATION:
+                task = OneWayTranslaitonTask(template=template, resources=resources, learning_items=target_words, answer=answer, task_id=task_id)
+            else:
+                raise Exception("Unknown task type.")
+            return task
+        except IntegrityError as e:
+            # Handle any integrity errors
+            raise Exception(f"Integrity error occurred: {e}")
+        finally:
+            cur.close()
+
+    def get_task_by_id(self, task_id: int) -> Task:
         """
-        pass
+        gets task by id by: 1) getting the template (use get_template_by_id),
+        2) retrieve resources from resources, task_resources and template_parameters
+        3) combine it all. 
+        """
+        cur = self.connection.cursor()
+        try:
+            # Fetch task information from tasks table
+            cur.execute("SELECT template_id, answer FROM tasks WHERE id=?", (task_id,))
+            task_info = cur.fetchone()
+            if not task_info:
+                raise ValueError(f"No task found with ID {task_id}")
+
+            template_id, answer = task_info
+
+            # Get the template using template_id
+            template = self.get_template_by_id(template_id)
+            if not template:
+                raise ValueError(f"No template found with ID {template_id}")
+
+            # Retrieve resources associated with the task
+            cur.execute("""
+                SELECT tr.parameter_id, tr.resource_id
+                FROM task_resources tr
+                WHERE tr.task_id = ?
+            """, (task_id,))
+            resource_data = cur.fetchall()
+
+            resources: Dict[str, Resource] = {}
+            for parameter_id, resource_id in resource_data:
+                parameter_name = self.get_parameter_name_by_id(parameter_id)
+                resource = self.get_resource_by_id(resource_id)
+                resources[parameter_name] = resource
+
+            # Get target words associated with the task
+            cur.execute("""
+                SELECT w.word, w.pos, w.freq, w.id
+                FROM task_target_words tt
+                JOIN words w ON tt.word_id = w.id
+                WHERE tt.task_id = ?
+            """, (task_id,))
+            word_data = cur.fetchall()
+
+            target_words: Set[LexicalItem] = {LexicalItem(*row) for row in word_data}
+
+            # Create the Task object
+            if template.task_type == TaskType.ONE_WAY_TRANSLATION:
+                task = OneWayTranslaitonTask(template, resources, target_words, answer, task_id)
+            else:
+                raise Exception("Unknown task type.")
+            return task
+
+        finally:
+            cur.close()
+
+    def get_parameter_name_by_id(self, parameter_id: int) -> str:
+        cur = self.connection.cursor()
+        try:
+            cur.execute("SELECT name FROM template_parameters WHERE id=?", (parameter_id,))
+            result = cur.fetchone()
+            if result:
+                return result[0]  # Return the parameter name
+            else:
+                raise ValueError(f"No parameter found with ID {parameter_id}")
+        finally:
+            cur.close()
     
-    def remove_task():
+    def remove_task(task_id: int) -> None:
         """
         Removes task from tasks and task_resources tables.
         """
@@ -353,6 +629,9 @@ class DatabaseManager:
         pass
 
     def get_tasks_by_template():
+        pass
+
+    def get_tasks_for_words(self, target_words: Set[LexicalItem]) -> List[Task]:
         pass
 
     def fetch_tasks(self, criteria: List) -> List[Task]:
@@ -371,15 +650,4 @@ class DatabaseManager:
         if self.connection:
             self.connection.close()
 
-db = DatabaseManager(DATABASE_PATH)
-
-db.create_db()
-
-word_freq_output_file_path = "word_freq.txt"
-word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
-filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
-list_of_tuples: List[Tuple[str, str, int]] = list(filtered_dataframe.to_records(index=False))
-# convert numpy.int64 to Python integer
-list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples]
-db.add_words_to_db(list_of_tuples)
-db.close()
+DB = DatabaseManager(DATABASE_PATH)

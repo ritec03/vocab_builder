@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import List, Set, Tuple
-from data_structures import LexicalItem, Score
+from data_structures import NUM_NEW_WORDS_PER_LESSON, NUM_WORDS_PER_LESSON, LexicalItem, Score
 from database import DatabaseManager
-from task import Evaluation, Task, TaskFactory
+from task import Evaluation, Task
+from task_generator import TaskFactory
 
 class ErrorCorrectionStrategy(ABC):
     @abstractmethod
-    def apply_correction(self, task: Task, user_response: str, evaluation: Evaluation) -> Evaluation:
+    def apply_correction(self, evaluation: Evaluation) -> Evaluation:
         """
         Applies a correction strategy to the task based on the user's response and the evaluation manager.
         
@@ -18,29 +19,51 @@ class ErrorCorrectionStrategy(ABC):
         """
         pass
 
+"""
+Strategy where a different task is given
+Strategy where answer is revealed with blanks of words (target words) or with letters missing
+Strategy where some words are translated
+
+Composing error correction? Like get with blank words first, but then add some letters back.
+
+somehow the error correction tasks should also be saved and linked to their tasks?
+Error correction templates?
+
+The strategy will apply an error correction template
+
+For now just focus on something that takes into account the previous task (correction) only
+
+TODO make error correction strategy return correction task and let exercise sequence to evaluate
+"""
+
+class EquivalentTaskStrategy(ErrorCorrectionStrategy):
+    """
+    This strategy produces a different task with the same template
+    for the target words.
+    """
+    def apply_correction(self, evaluation: Evaluation) -> Evaluation:
+        # take last evaluation's task
+        previous_task = evaluation.get_last_history().task
+        # get new target words
+        words_to_retry = evaluation.get_last_low_scored_words()
+        # produce equivalent task for same lexical items
+        # make sure it's not the same task
+        new_task = TaskFactory().get_task_for_word(words_to_retry, previous_task.template)
+        if new_task.id == previous_task.id:
+            raise Exception("Implement criteria not to choose the same task.")
+        user_response = input(new_task.produce_task())
+        evaluation = new_task.get_evaluation(user_response, evaluation)
+        return evaluation
+
 class HintStrategy(ErrorCorrectionStrategy):
-    def apply_correction(self, task, user_response, evaluation) -> Evaluation:
+    def apply_correction(self, evaluation) -> Evaluation:
         # Logic to provide a hint for the same task
         pass
 
 class ExplanationStrategy(ErrorCorrectionStrategy):
-    def apply_correction(self, task, user_response, evaluation) -> Evaluation:
+    def apply_correction(self, evaluation) -> Evaluation:
         # Logic to provide an explanation for the correct answer
         pass
-
-class ErrorCorrectionHandler:
-    def __init__(self, strategy: ErrorCorrectionStrategy):
-        self.strategy = strategy
-
-    def execute_correction(self, task: Task, evaluation: Evaluation) -> Evaluation:
-        """
-        Applies the correction strategy to the task.
-
-        :param task: The task object.
-        :param evaluation: The EvaluationManager object.
-        """
-        new_evaluation = self.strategy.apply_correction(task, evaluation)
-        return new_evaluation
 
 class ExerciseSequence:
     def __init__(self, task: Task, strategies_sequence: List[str]):
@@ -55,7 +78,7 @@ class ExerciseSequence:
         self.strategies_sequence = strategies_sequence
         self.attempt_count = 0
 
-    def get_strategy_object(strategy_key: str) -> Task:
+    def get_strategy_object(self, strategy_key: str) -> ErrorCorrectionStrategy:
         """
         Factory method to get an instance of ErrorCorrectionStrategy based on a key.
 
@@ -65,12 +88,13 @@ class ExerciseSequence:
         strategy_map = {
             'hint': HintStrategy,
             'explanation': ExplanationStrategy,
+            'same_task': EquivalentTaskStrategy
             # Additional strategies can be added here.
         }
         strategy_class = strategy_map.get(strategy_key)
-        if strategy_class:
-            return strategy_class()
-        raise ValueError(f"Unknown strategy key: {strategy_key}")
+        if not strategy_class:
+            raise ValueError(f"Unknown strategy key: {strategy_key}")
+        return strategy_class()
 
     def perform_run(self, evaluation: Evaluation) -> Evaluation:
         """
@@ -83,16 +107,16 @@ class ExerciseSequence:
         :reutrn: The evaluation result as a new and updated object.
         """
         if self.attempt_count == 0:
-            # NOTE get user response here - very simple for now
             user_response = input(self.task.produce_task())
             evaluation = self.task.get_evaluation(user_response, evaluation)
-        elif self.attempt_count == len(self.strategies_sequence):
+        elif self.attempt_count > 0 and self.attempt_count < len(self.strategies_sequence):
+            words_to_retry = evaluation.get_last_low_scored_words()
+            if len(words_to_retry) > 0:        
+                strategy_key = self.strategies_sequence[self.attempt_count]
+                strategy = self.get_strategy_object(strategy_key)
+                evaluation = strategy.apply_correction(evaluation)
+        elif self.attempt_count >= len(self.strategies_sequence):
             return evaluation
-        elif self.attempt_count > 0:
-            strategy_key = self.strategies_sequence[self.attempt_count]
-            strategy = self.get_strategy_object(strategy_key)
-            error_correction_handler = ErrorCorrectionHandler(strategy)
-            evaluation = error_correction_handler.execute_correction(self.task, evaluation)
 
         self.attempt_count += 1
         return evaluation
@@ -194,11 +218,11 @@ class LessonGenerator():
     def choose_target_words(self, user_scores: List[Score]) -> Set[LexicalItem]:
         # TODO also take into account time last practiced later
         # Choose 10 lowest scoring words or all if there are fewer than 10
-        lowest_scores = sorted(user_scores, key=lambda x: x.score)[:10]
+        lowest_scores = sorted(user_scores, key=lambda x: x.score)[:NUM_NEW_WORDS_PER_LESSON]
         lowest_words = {score.word for score in lowest_scores}
 
         # Calculate how many new words are needed
-        num_new_words_needed = 15 - len(lowest_words)
+        num_new_words_needed = NUM_WORDS_PER_LESSON - len(lowest_words)
 
         # Retrieve new words if needed
         if num_new_words_needed > 0:
@@ -215,9 +239,10 @@ class LessonGenerator():
         # NOTE create a dummy plan by using one-word items only for now and no error correction
         task_factory = TaskFactory()
         lesson_plan = []
+        strategy_sequence = ["same_task", "same_task", "same_task"]
         for word in list(words):
             task = task_factory.get_task_for_word({word})
-            lesson_plan.append((task, []))
+            lesson_plan.append((task, strategy_sequence))
         return lesson_plan
 
 class Session():

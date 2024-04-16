@@ -26,12 +26,10 @@ CREATE TABLE IF NOT EXISTS learning_data (
 
 CREATE TABLE IF NOT EXISTS templates (
     id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
     task_type TEXT NOT NULL,
     template TEXT NOT NULL,
     description TEXT NOT NULL,
     examples TEXT NOT NULL, -- examples of template usage
-    UNIQUE (name),
     UNIQUE (template)
 );
 
@@ -41,14 +39,22 @@ CREATE TABLE IF NOT EXISTS template_parameters (
     description TEXT NOT NULL,
     template_id INTEGER NOT NULL,
     UNIQUE (template_id, name), -- Unique constraint for template_id and name combination
-    FOREIGN KEY (template_id) REFERENCES template(id)
+    FOREIGN KEY (template_id) REFERENCES templates(id)
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY,
     template_id INTEGER NOT NULL,
-    description TEXT,
+    answer TEXT,
     FOREIGN KEY (template_id) REFERENCES templates(id)
+);
+
+CREATE TABLE IF NOT EXISTS task_target_words (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER NOT NULL,
+    word_id INTEGER NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id),
+    FOREIGN KEY (word_id) REFERENCES words(id)
 );
 
 CREATE TABLE IF NOT EXISTS resources (
