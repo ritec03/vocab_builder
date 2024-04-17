@@ -7,15 +7,16 @@ from math import floor
 MAX_USER_NAME_LENGTH = 20
 MAX_SCORE = 10
 MIN_SCORE = 0
-EXERCISE_THRESHOLD = MAX_SCORE/2
-NUM_WORDS_PER_LESSON = 2
+EXERCISE_THRESHOLD = MAX_SCORE
+NUM_WORDS_PER_LESSON = 4
 NUM_NEW_WORDS_PER_LESSON = floor(NUM_WORDS_PER_LESSON/3)
  
 @unique
 class TaskType(Enum):
     ONE_WAY_TRANSLATION = 1
 
-@dataclass
+# need frozen to be able to use with sets and to ensure that it does not change
+@dataclass(frozen=True)
 class Score():
     """Represents score for a word."""
     word_id: int

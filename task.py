@@ -90,9 +90,10 @@ class OneWayTranslaitonTask(Task):
         return AIEvaluation({"task": self.produce_task()})
 
 class HistoryEntry:
-    def __init__(self, task: Task, response: str, evaluation_result: List[Score], correction=None):
+    def __init__(self, task: Task, response: str, evaluation_result: Set[Score], correction=None):
         # evaluation result is a list of tuples of word_id and score (multiple words can be evaluated
         # in one evaluation)
+        # TODO evaluation result should restrict to one score per word.
         self.task = task
         self.response = response
         self.evaluation_result = evaluation_result
@@ -100,9 +101,9 @@ class HistoryEntry:
 
 class Evaluation:
     def __init__(self):
-        self.history = []
+        self.history: List[HistoryEntry] = []
 
-    def add_entry(self, task: Task, response: str, evaluation_result: List[Score], correction=None):
+    def add_entry(self, task: Task, response: str, evaluation_result: Set[Score], correction=None):
         entry = HistoryEntry(task, response, evaluation_result, correction)
         self.history.append(entry)
 
@@ -136,6 +137,36 @@ class Evaluation:
             )
         )
         return words_to_retry
+    
+    def get_final_scores_latest(self) -> Set[Score]:
+        """
+        Returns final scores for all practiced words by 
+        getting the latest score for each word evaluated in history.
+        """
+        # iterate from the latest history
+        # create a set of word_ids
+        words: Set[int] = set()
+        final_scores: Set[Score] = set()
+        for history in reversed(self.history):
+            for score in history.evaluation_result:
+                if score.word_id not in words:
+                    final_scores.add(score)
+                    words.add(score.word_id)
+        return final_scores
+    
+    def get_final_scores_highest(self) -> Set[Score]:
+        """
+        Returns final scores for all practiced words by 
+        getting the highest score for each word evaluated in history.
+        """
+        all_scores = set().union(*[h.evaluation_result for h in self.history])
+        highest_scores_dict: Dict[str, Score] = {}
+        for score in list(all_scores):
+            if score.word_id not in highest_scores_dict or score.score > highest_scores_dict[score.word_id].score:
+                highest_scores_dict[score.word_id] = score
+    
+        highest_scores = set(highest_scores_dict.values())
+        return highest_scores
 
     def to_json(self):
         return {
