@@ -82,10 +82,38 @@ CREATE TABLE IF NOT EXISTS resource_words (
     FOREIGN KEY (word_id) REFERENCES words(id)
 );
 
-CREATE TABLE IF NOT EXISTS user_lesson_history (
+CREATE TABLE IF NOT EXISTS user_lessons (
     id INTEGER PRIMARY KEY,
     user_id INTEGER NOT NULL,
-    evaluation_json TEXT NOT NULL,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS evaluations (
+    id INTEGER PRIMARY KEY,
+    lesson_id INTEGER NOT NULL,
+    sequence_number INTEGER NOT NULL,
+    FOREIGN KEY (lesson_id) REFERENCES user_lessons(id),
+    UNIQUE (lesson_id, sequence_number)  -- Ensures sequence numbers are unique within each lesson
+);
+
+CREATE TABLE IF NOT EXISTS history_entries (
+    id INTEGER PRIMARY KEY,
+    evaluation_id INTEGER NOT NULL,
+    sequence_number INTEGER NOT NULL,
+    task_id INTEGER NOT NULL,
+    response TEXT,
+    FOREIGN KEY (evaluation_id) REFERENCES evaluations(id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id),
+    UNIQUE (evaluation_id, sequence_number)  -- Ensures sequence numbers are unique within each evaluation
+);
+
+CREATE TABLE IF NOT EXISTS entry_scores (
+    id INTEGER PRIMARY KEY,
+    history_entry_id INTEGER NOT NULL,
+    word_id INTEGER NOT NULL,
+    score INTEGER CHECK (score >= 0 AND score <= 10) NOT NULL,
+    FOREIGN KEY (history_entry_id) REFERENCES history_entries(id),
+    FOREIGN KEY (word_id) REFERENCES words(id),
+    UNIQUE (history_entry_id, word_id)  -- Ensuring one score per word per history entry
 );

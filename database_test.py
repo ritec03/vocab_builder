@@ -5,7 +5,7 @@ from data_structures import LexicalItem, Resource, Score, TaskType
 from database import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, DatabaseManager, SCHEMA_PATH, ValueDoesNotExistInDB
 import os
 
-from task import Evaluation, Task
+from task import Evaluation, HistoryEntry, OneWayTranslaitonTask, Task
 
 # Define a test database file path
 TEST_DB_FILE = "test_database.db"
@@ -573,6 +573,138 @@ class TestAddTask(unittest.TestCase):
         self.assertEqual(fetched_task.learning_items, target_words)
         self.assertEqual(fetched_task.correctAnswer, answer)
 
+
+class TestAddTask(unittest.TestCase):
+    def setUp(self):
+        # Initialize the database manager and create the test database
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+        self.db_manager.create_db()
+
+        # add user
+        self.user_id = self.db_manager.insert_user("user1")
+
+        # add template
+        # Create a template with two parameters
+        template_string = (
+            "Translate the following into English:\n" +
+            "   '$sentence' and '$phrase'"
+        )
+        template_description = "Description of the template"
+        template_examples = ["Example one", "Example two"]
+        parameter_description = {
+            "sentence": "Sentence in target language to be translated into English.",
+            "phrase": "Phrase in target language to be translated into English."
+        }
+
+        # Add the template
+        self.added_template = self.db_manager.add_template(
+            template_string=template_string,
+            template_description=template_description,
+            template_examples=template_examples,
+            parameter_description=parameter_description,
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+        # add words 
+        self.db_manager.add_words_to_db([
+            ("word1", "noun", 10),
+            ("word2", "verb", 8)
+        ])
+
+        self.word_ids = [
+            self.db_manager.connection.execute("SELECT id FROM words WHERE word=?", ("word1",)).fetchone()[0],
+            self.db_manager.connection.execute("SELECT id FROM words WHERE word=?", ("word2",)).fetchone()[0]
+        ]
+
+        self.words = {LexicalItem("word1", "noun", 10, self.word_ids[0]), LexicalItem("word2", "verb", 8, self.word_ids[1])}
+        
+
+
+    def tearDown(self):
+        # Close the database connection and remove the test database file
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def create_example_task(self, resource_string1, resource_string2):
+        target_words = {
+            LexicalItem(item='word1', pos='noun', freq=10, id=self.word_ids[0]),
+            LexicalItem(item='word2', pos='verb', freq=8, id=self.word_ids[1])
+        }
+        answer = 'Sample answer'
+        resource1 = self.db_manager.add_resource_manual(resource_string1, self.words)
+        resource2 = self.db_manager.add_resource_manual(resource_string2, self.words)
+        resources = {
+            'sentence': resource1,
+            'phrase': resource2
+        }
+        task = self.db_manager.add_task(self.added_template.id, resources, target_words, answer)
+        return task
+
+    def test_add_user_lesson_data(self):
+        task1 = self.create_example_task("task1-r1", "task1-r2")
+        task2 = self.create_example_task("task2-r1", "task2-r2")
+        task3 = self.create_example_task("task3-r1", "task3-r2")
+
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(
+            task1,
+            "response1",
+            {Score(1,4)}
+        )
+        evaluation1.add_entry(
+            task2,
+            "response2",
+            {Score(1,6)}
+        )
+        evaluation2 = Evaluation()
+        evaluation2.add_entry(
+            task3,
+            "response3",
+            {Score(1,5), Score(2,7)}
+        )
+
+        lesson_data = [evaluation1, evaluation2]
+
+        self.db_manager.save_user_lesson_data(self.user_id, lesson_data)
+
+        conn = self.db_manager.connection
+
+        # Validate the insertion of user lesson data
+        # Check user_lessons
+        lesson_rows = list(conn.execute("SELECT id, user_id FROM user_lessons"))
+        self.assertEqual(len(lesson_rows), 1)
+        self.assertEqual(lesson_rows[0][1], self.user_id)
+
+        # Check evaluations
+        evaluation_rows = list(conn.execute("SELECT lesson_id, sequence_number, id FROM evaluations WHERE lesson_id=? ORDER BY sequence_number", (lesson_rows[0][0],)))
+        print(evaluation_rows)
+        self.assertEqual(len(evaluation_rows), len(lesson_data))
+        for i, evaluation in enumerate(evaluation_rows):
+            self.assertEqual(evaluation[1], i + 1)  # Check sequence number
+
+        # Check history_entries and entry_scores
+        for i, evaluation in enumerate(lesson_data):
+            history_entries = list(conn.execute("SELECT evaluation_id, task_id, response, id FROM history_entries WHERE evaluation_id=?", (evaluation_rows[i][2],)))
+            print(history_entries)
+            self.assertEqual(len(history_entries), len(evaluation.history))
+
+            for j, history_entry in enumerate(evaluation.history):
+                print(history_entries[j])
+                self.assertEqual(history_entries[j][2], history_entry.response)  # Check response text
+                self.assertEqual(history_entries[j][1], history_entry.task.id)  # Check task ID
+
+                # Check scores
+                scores_rows = list(conn.execute("SELECT word_id, score FROM entry_scores WHERE history_entry_id=?", (history_entries[j][3],)))
+                scores_dict = {score.word_id: score.score for score in history_entry.evaluation_result}
+
+                self.assertEqual(len(scores_rows), len(history_entry.evaluation_result))
+
+                for score_row in scores_rows:
+                    print(score_row)
+                    print(scores_dict)
+                    self.assertEqual(score_row[1], scores_dict[score_row[0]])
 
 
 

@@ -234,34 +234,41 @@ class DatabaseManager:
 
     def save_user_lesson_data(self, user_id: int, lesson_data: List[Evaluation]) -> None:
         """
-        Saves lesson data as a json string of lesson data in user lesson history table.
-
-        test - try to add an object that is not an evaluation object
-        test - non existent user
-        test - tries to add an empty evaluation object (which history entry is empty list)
-        test - test with a list that contains two evaluations, each of which contains two
-            history entries.
-
-        raises TypeError if lesson_data is not the right object
-        raises ValueDoesNotExistInDB if user does not exist
-        raises ValueError if there is an empty list, or it has only one evaluation without
-        history entries
+        Saves user lesson data into the database by saving into user_lessons table,
+        adding the evaluations list in order into evaluations table, and saving each history entry
+        into the history entries in order, with received scores going to entry_scores table
         """
-        if not isinstance(lesson_data, list) or not all(isinstance(evaluation, Evaluation) for evaluation in lesson_data):
-            raise TypeError("lesson_data must be a list of Evaluation objects")
-        
-        # Verify the user exists
-        cur = self.connection.cursor()
-        cur.execute("SELECT id FROM users WHERE id=?", (user_id,))
-        if cur.fetchone() is None:
-            raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
+        cursor = self.connection.cursor()
+        try:
+            # Insert a new user lesson
+            cursor.execute("INSERT INTO user_lessons (user_id) VALUES (?)", (user_id,))
+            lesson_id = cursor.lastrowid
 
-        # Serialize and save lesson data
-        if (len(lesson_data) == 0) or (len(lesson_data) == 1 and len(lesson_data[0].get_history()) == 0):
-            raise ValueError("Lesson data contains no evaluation or only one evaluation with no history entries.")
-        serialized_data = json.dumps([evaluation.to_json() for evaluation in lesson_data])
-        cur.execute("INSERT INTO user_lesson_history (user_id, evaluation_json) VALUES (?, ?)", (user_id, serialized_data))
-        self.connection.commit()
+            for i, evaluation in enumerate(lesson_data):
+                # Insert each evaluation, preserving the order
+                cursor.execute("INSERT INTO evaluations (lesson_id, sequence_number) VALUES (?, ?)", (lesson_id, i + 1))
+                evaluation_id = cursor.lastrowid
+
+                for j, history in enumerate(evaluation.history):
+                    # Insert each history entry
+                    cursor.execute("INSERT INTO history_entries (evaluation_id, sequence_number, task_id, response) VALUES (?, ?, ?, ?)",
+                                   (evaluation_id, j + 1, history.task.id, history.response))
+                    history_entry_id = cursor.lastrowid
+
+                    # Insert scores for each history entry
+                    for score in history.evaluation_result:
+                        cursor.execute("INSERT INTO entry_scores (history_entry_id, word_id, score) VALUES (?, ?, ?)",
+                                       (history_entry_id, score.word_id, score.score))
+
+            # Commit changes
+            self.connection.commit()
+        except Exception as e:
+            # Roll back in case of error
+            self.connection.rollback()
+            raise e
+        finally:
+            # Close the cursor
+            cursor.close()
 
     def retrieve_words_for_lesson(self, user_id: int, word_num: int) -> Set[LexicalItem]:
         """
