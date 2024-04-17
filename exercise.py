@@ -4,6 +4,8 @@ from data_structures import NUM_NEW_WORDS_PER_LESSON, NUM_WORDS_PER_LESSON, Lexi
 from database import DatabaseManager
 from task import Evaluation, Task
 from task_generator import TaskFactory
+from database import DB
+from itertools import chain
 
 class ErrorCorrectionStrategy(ABC):
     @abstractmethod
@@ -138,7 +140,7 @@ class ExerciseSequence:
     # or a generator that generates tasks
 
 class Lesson:
-    def __init__(self, words: Set[LexicalItem], lesson_plan: List[Tuple[Task, List[str]]]):
+    def __init__(self, user_id: int, words: Set[LexicalItem], lesson_plan: List[Tuple[Task, List[str]]]):
         """
         Initialize a lesson with a set of words to be learned, each associated with a sequence of error correction strategies.
 
@@ -151,6 +153,7 @@ class Lesson:
         self.lesson_plan = lesson_plan
         self.practiced_words = {}  # Maps word ID to Evaluation objects.
         self.evaluation_list: List[Evaluation] = []
+        self.user_id = user_id
 
     def perform_iteration(self, current_task_tuple: Tuple[Task, List[str]]):
         """
@@ -164,15 +167,22 @@ class Lesson:
         """
         Save final scores of each evaluation in the evaluation list into
         the database.
+
+        Assumes that a target word occurs only in one evaluation.
         """
-        # TODO what to do when there is more thna one score for a word?
-        raise NotImplementedError()
+        # get evaluation scores
+        final_eval_scores : Set[Score] = [eval.get_final_scores_highest() for eval in self.evaluation_list]
+        final_scores = [score for list_of_scores in final_eval_scores for score in list_of_scores]
+        # save scores to db
+        [DB.add_word_score(self.user_id, score) for score in final_scores]
+        print(final_scores)
     
     def save_evaluations(self) -> None:
         """
         Save the evaluations for the user into the database
         """
-        raise NotImplementedError()
+        # TODO implement this
+        pass
 
     def perform_lesson(self): 
         """
@@ -209,7 +219,7 @@ class LessonGenerator():
         # generate lesson plan
         lesson_plan = self.generate_lesson_plan(target_words)
         # return lesson
-        return Lesson(target_words, lesson_plan)
+        return Lesson(self.user_id, target_words, lesson_plan)
     
     def retrieve_user_data(self) -> List[Score]:
         user_scores = self.db.retrieve_user_scores(self.user_id)
@@ -237,6 +247,9 @@ class LessonGenerator():
     
     def generate_lesson_plan(self, words:Set[LexicalItem]) -> List[Tuple[Task, List[str]]]:
         # NOTE create a dummy plan by using one-word items only for now and no error correction
+        # NOTE for now create lesson task which partitions target words without overlaps, i.e.
+        # a target word is targeted by one task only
+        # TODO think about how to do it.
         task_factory = TaskFactory()
         lesson_plan = []
         strategy_sequence = ["same_task", "same_task", "same_task"]

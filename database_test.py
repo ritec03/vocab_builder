@@ -124,13 +124,15 @@ class TestDatabaseFunctions(unittest.TestCase):
         OLD_SCORE = 8
         NEW_SCORE = 5
 
-        self.db_manager.add_word_score(user_id, word_id, OLD_SCORE)
+        score_old = Score(word_id, OLD_SCORE)
+        self.db_manager.add_word_score(user_id, score_old)
         # Assert that the word score is added successfully
         cur.execute("SELECT score FROM learning_data WHERE user_id=? AND word_id=?", (user_id, word_id))
         score = cur.fetchone()[0]
         self.assertEqual(score, OLD_SCORE)  # Check that the score is OLD_SCORE
         # update the score again and see if it changes
-        self.db_manager.add_word_score(user_id, word_id, NEW_SCORE)
+        score_new = Score(word_id, NEW_SCORE)
+        self.db_manager.add_word_score(user_id, score_new)
         cur.execute("SELECT score FROM learning_data WHERE user_id=? AND word_id=?", (user_id, word_id))
         score = cur.fetchone()[0]
         self.assertEqual(score, NEW_SCORE)  # Check that the score is NEW_SCORE
@@ -146,12 +148,13 @@ class TestDatabaseFunctions(unittest.TestCase):
         word_id = cur.fetchone()[0]
         cur.execute("SELECT id FROM users WHERE user_name=?", ("test_user",))
         user_id = cur.fetchone()[0]
-        self.db_manager.add_word_score(user_id, word_id, 8)
+        score_obj = Score(word_id, 8)
+        self.db_manager.add_word_score(user_id, score_obj)
 
         # Assert that the word score is added successfully
         cur.execute("SELECT score FROM learning_data WHERE user_id=? AND word_id=?", (user_id, word_id))
         score = cur.fetchone()[0]
-        self.assertEqual(score, 8)  # Check that the score is 8
+        self.assertEqual(score, score_obj.score)  # Check that the score is 8
 
     def test_add_word_score_nonexistent_user(self):
         word_list = [("cat", "NOUN", 10)]
@@ -160,25 +163,29 @@ class TestDatabaseFunctions(unittest.TestCase):
         cur = self.db_manager.connection.cursor()
         cur.execute("SELECT id FROM words WHERE word=? AND pos=?", ("cat", "NOUN"))
         word_id = cur.fetchone()[0]
+        score_obj = Score(word_id, 8)
         # Test adding a word score with a non-existent user
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.add_word_score(999, word_id, 8)  # Attempting to add a score for a non-existent user should raise an error
+            self.db_manager.add_word_score(999, score_obj)  # Attempting to add a score for a non-existent user should raise an error
 
     def test_add_word_score_nonexistent_word_id(self):
         # Test adding a word score with a non-existent word_id
         self.db_manager.insert_user("test_user")
+        score_obj = Score(999, 8)
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.add_word_score(1, 999, 8)  # Attempting to add a score for a non-existent word_id should raise an error
+            self.db_manager.add_word_score(1, score_obj)  # Attempting to add a score for a non-existent word_id should raise an error
 
     def test_add_word_score_incorrect_score(self):
         # Test adding a word score with an incorrect score
         self.db_manager.insert_user("test_user")
         word_list = [("cat", "NOUN", 10)]
         self.db_manager.add_words_to_db(word_list)
+        score_neg = Score(1, (MIN_SCORE - 1))
+        score_high = Score(1, (MAX_SCORE + 1))
         with self.assertRaises(ValueError):
-            self.db_manager.add_word_score(1, 1, (MIN_SCORE - 1))  # Attempting to add a negative score should raise an error
+            self.db_manager.add_word_score(1, score_neg)  # Attempting to add a negative score should raise an error
         with self.assertRaises(ValueError):
-            self.db_manager.add_word_score(1, 1, (MAX_SCORE + 1))  # Attempting to add a score above the maximum should raise an error
+            self.db_manager.add_word_score(1, score_high)  # Attempting to add a score above the maximum should raise an error
 
 class TestUpdateUserScores(unittest.TestCase):
     def setUp(self):
@@ -252,8 +259,10 @@ class TestRetrieveUserScores(unittest.TestCase):
         self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
         user_id, word_ids = self.get_test_user_and_word_ids()
         # Add scores for both words for the user
-        self.db_manager.add_word_score(user_id, word_ids[0], 5)
-        self.db_manager.add_word_score(user_id, word_ids[1], 8)
+        score_1 = Score(word_ids[0], 5)
+        score_2 = Score(word_ids[1], 8)
+        self.db_manager.add_word_score(user_id, score_1)
+        self.db_manager.add_word_score(user_id, score_2)
 
     def get_test_user_and_word_ids(self):
         """

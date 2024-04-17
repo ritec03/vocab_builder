@@ -145,7 +145,7 @@ class DatabaseManager:
         finally:
             cur.close()
 
-    def add_word_score(self, user_id: int, word_id: int, score: int) -> None:
+    def add_word_score(self, user_id: int, score: Score) -> None:
         """
         Adds or updates a row in learning_data for the user with user_id
         for word_id with the given score. Score should be between MIN_SCORE and MAX_SCORE.
@@ -156,7 +156,7 @@ class DatabaseManager:
             word_id (int): ID of the word.
             score (int): Score to add (MIN_SCORE and MAX_SCORE).
         """
-        if not MIN_SCORE <= score <= MAX_SCORE:
+        if not MIN_SCORE <= score.score <= MAX_SCORE:
             raise ValueError(f"Score should be between {MIN_SCORE} and {MAX_SCORE}.")
 
         cur = self.connection.cursor()
@@ -166,10 +166,10 @@ class DatabaseManager:
             cur.close()
             raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
 
-        cur.execute("SELECT 1 FROM words WHERE id=?", (word_id,))
+        cur.execute("SELECT 1 FROM words WHERE id=?", (score.word_id,))
         if not cur.fetchone():
             cur.close()
-            raise ValueDoesNotExistInDB(f"Word with ID {word_id} does not exist.")
+            raise ValueDoesNotExistInDB(f"Word with ID {score.word_id} does not exist.")
 
         # Insert or update the score
         try:
@@ -178,7 +178,7 @@ class DatabaseManager:
                 VALUES (?, ?, ?)
                 ON CONFLICT(user_id, word_id)
                 DO UPDATE SET score = excluded.score
-            """, (user_id, word_id, score))
+            """, (user_id, score.word_id, score.score))
             self.connection.commit()
             print("Word score added or updated successfully.")
         except IntegrityError as e:
@@ -285,7 +285,6 @@ class DatabaseManager:
         # Fetch the results and create a set of LexicalItem objects
         words = set()
         for row in cursor.fetchall():
-            print(row)
             index, word, pos, freq = row
             words.add(LexicalItem(item=word, pos=pos, freq=freq, id=index))
         
@@ -314,7 +313,6 @@ class DatabaseManager:
         template_row = cur.fetchone()
 
         if template_row:
-            print(template_row)
             # Extract template information from the row
             template = TaskTemplate(
                 template_id=template_row[0],
