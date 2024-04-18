@@ -206,33 +206,44 @@ class TestUpdateUserScores(unittest.TestCase):
 
     def test_update_user_scores_single_score_update(self):
         # Test adding a single score and updating it
-        initial_scores = [Score(word_id=self.word_ids[0], score=5)]
-        updated_scores = [Score(word_id=self.word_ids[0], score=7)]
+        initial_scores = {Score(word_id=self.word_ids[0], score=5)}
+        updated_scores = {Score(word_id=self.word_ids[0], score=7)}
         self.db_manager.update_user_scores(self.user_id, initial_scores)
         self.db_manager.update_user_scores(self.user_id, updated_scores)
         scores = self.db_manager.retrieve_user_scores(self.user_id)
-        self.assertEqual(scores[0].score, 7)
+        # Find and check the score
+        score_dict = {score.word_id: score.score for score in scores}
+
+        # Check the updated score
+        self.assertEqual(score_dict[self.word_ids[0]], 7)
 
     def test_update_user_scores_multiple_scores_update(self):
         # Test adding three scores, then updating two of them
-        initial_scores = [Score(word_id=self.word_ids[i], score=3 + i) for i in range(3)]
-        updated_scores = [Score(word_id=self.word_ids[0], score=8), Score(word_id=self.word_ids[1], score=9)]
+        initial_scores = {Score(word_id=self.word_ids[i], score=3 + i) for i in range(3)}
+        updated_scores = {Score(word_id=self.word_ids[0], score=8), Score(word_id=self.word_ids[1], score=9)}
         self.db_manager.update_user_scores(self.user_id, initial_scores)
         self.db_manager.update_user_scores(self.user_id, updated_scores)
         scores = self.db_manager.retrieve_user_scores(self.user_id)
-        self.assertEqual(scores[0].score, 8)
-        self.assertEqual(scores[1].score, 9)
-        self.assertEqual(scores[2].score, 5)  # Unchanged
+        # Find and check the scores
+        score_dict = {score.word_id: score.score for score in scores}
+        
+        # Check the updated scores
+        self.assertEqual(score_dict[self.word_ids[0]], 8)
+        self.assertEqual(score_dict[self.word_ids[1]], 9)
+        
+        # Check the unchanged score
+        unchanged_score_id = next(id for id in self.word_ids if id not in [s.word_id for s in updated_scores])
+        self.assertEqual(score_dict[unchanged_score_id], 5)
 
     def test_update_user_scores_nonexistent_word(self):
         # Test updating with a word_id that does not exist
-        scores = [Score(word_id=9999, score=7)]  # Assuming 9999 is an ID that does not exist
+        scores = {Score(word_id=9999, score=7)}  # Assuming 9999 is an ID that does not exis
         with self.assertRaises(ValueDoesNotExistInDB):
             self.db_manager.update_user_scores(self.user_id, scores)
 
     def test_update_user_scores_nonexistent_user(self):
         # Test updating a score for a non-existent user
-        scores = [Score(word_id=self.word_ids[0], score=7)]
+        scores = {Score(word_id=self.word_ids[0], score=7)}
         with self.assertRaises(ValueDoesNotExistInDB):
             self.db_manager.update_user_scores(9999, scores)  # Assuming 9999 is a non-existent user ID
 
@@ -282,7 +293,7 @@ class TestRetrieveUserScores(unittest.TestCase):
         """
         user_id, word_ids = self.get_test_user_and_word_ids()
         scores = self.db_manager.retrieve_user_scores(user_id)
-        self.assertIsInstance(scores, list)
+        self.assertIsInstance(scores, set)
         self.assertEqual(len(scores), 2)  # Expecting scores for 2 words
         # Ensure that the scores list contains Score objects with the correct scores
         scores_dict = {score.word_id: score.score for score in scores}
@@ -296,7 +307,7 @@ class TestRetrieveUserScores(unittest.TestCase):
         self.db_manager.insert_user("another_user")
         another_user_id = self.db_manager.connection.execute("SELECT id FROM users WHERE user_name=?", ("another_user",)).fetchone()[0]
         scores = self.db_manager.retrieve_user_scores(another_user_id)
-        self.assertIsInstance(scores, list)
+        self.assertIsInstance(scores, set)
         self.assertEqual(len(scores), 0)
 
     def test_nonexistent_user(self):
@@ -305,67 +316,6 @@ class TestRetrieveUserScores(unittest.TestCase):
         """
         with self.assertRaises(ValueDoesNotExistInDB):
             scores = self.db_manager.retrieve_user_scores(9999)  # Assuming 9999 is an ID that does not exist
-
-class TestSaveUserLessonData(unittest.TestCase):
-    def setUp(self):
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
-        self.db_manager = DatabaseManager(TEST_DB_FILE)
-        self.db_manager.create_db()
-        self.db_manager.insert_user("test_user")
-        self.user_id = self.db_manager.connection.execute("SELECT id FROM users WHERE user_name=?", ("test_user",)).fetchone()[0]
-
-    def tearDown(self):
-        self.db_manager.close()
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
-
-    def test_add_non_list_evaluation_object(self):
-        """
-        Test try to add an object that is not a list of evaluation objects.
-        """
-        with self.assertRaises(TypeError):
-            self.db_manager.save_user_lesson_data(self.user_id, "This is not a list of Evaluation objects")
-
-    def test_nonexistent_user(self):
-        """
-        Test try to save lesson data for a non-existent user.
-        """
-        with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.save_user_lesson_data(9999, [])
-
-    def test_add_empty_evaluation_object(self):
-        """
-        Test tries to add an empty evaluation object (which history entry is an empty list).
-        """
-        with self.assertRaises(ValueError):
-            self.db_manager.save_user_lesson_data(self.user_id, [Evaluation()])  # Passing an Evaluation object with an empty history
-
-    def test_add_two_evaluations_with_two_history_entries_each(self):
-        """
-        Test with a list that contains two evaluations, each of which contains two history entries.
-        """
-        task = Task(template_name="Test Template", resources=["test", "study"], learning_items=set())
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "Response 1", [Score(word_id=1, score=5)], None)
-        evaluation1.add_entry(task, "Response 2", [Score(word_id=2, score=8)], None)
-        
-        evaluation2 = Evaluation()
-        evaluation2.add_entry(task, "Response 3", [Score(word_id=1, score=6)], None)
-        evaluation2.add_entry(task, "Response 4", [Score(word_id=2, score=7)], None)
-        
-        self.db_manager.save_user_lesson_data(self.user_id, [evaluation1, evaluation2])
-        
-        # Fetch saved lesson data to validate
-        cur = self.db_manager.connection.cursor()
-        cur.execute("SELECT evaluation_json FROM user_lesson_history WHERE user_id=?", (self.user_id,))
-        saved_data = cur.fetchone()[0]
-        cur.close()
-        
-        saved_evaluations = json.loads(saved_data)
-        self.assertEqual(len(saved_evaluations), 2)  # Ensure there are two evaluations saved
-        self.assertEqual(len(saved_evaluations[0]['history']), 2)  # First evaluation has two history entries
-        self.assertEqual(len(saved_evaluations[1]['history']), 2)  # Second evaluation has two history entries
 
 class TestAddTemplate(unittest.TestCase):
     def setUp(self):

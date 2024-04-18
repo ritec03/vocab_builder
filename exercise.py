@@ -181,8 +181,7 @@ class Lesson:
         """
         Save the evaluations for the user into the database
         """
-        # TODO implement this
-        pass
+        DB.save_user_lesson_data(self.user_id, self.evaluation_list)
 
     def perform_lesson(self): 
         """
@@ -221,15 +220,17 @@ class LessonGenerator():
         # return lesson
         return Lesson(self.user_id, target_words, lesson_plan)
     
-    def retrieve_user_data(self) -> List[Score]:
+    def retrieve_user_data(self) -> Set[Score]:
         user_scores = self.db.retrieve_user_scores(self.user_id)
         return user_scores
 
-    def choose_target_words(self, user_scores: List[Score]) -> Set[LexicalItem]:
+    def choose_target_words(self, user_scores: Set[Score]) -> Set[LexicalItem]:
         # TODO also take into account time last practiced later
         # Choose 10 lowest scoring words or all if there are fewer than 10
-        lowest_scores = sorted(user_scores, key=lambda x: x.score)[:NUM_NEW_WORDS_PER_LESSON]
-        lowest_words = {score.word for score in lowest_scores}
+        # TODO think how to randomize the choice of lowest scores.
+        lowest_scores = sorted(list(user_scores), key=lambda x: x.score)[:NUM_NEW_WORDS_PER_LESSON]
+        lowest_scored_word_ids = {score.word_id for score in lowest_scores}
+        lowest_words = {DB.get_word_by_id(word_id) for word_id in lowest_scored_word_ids}
 
         # Calculate how many new words are needed
         num_new_words_needed = NUM_WORDS_PER_LESSON - len(lowest_words)

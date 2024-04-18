@@ -73,6 +73,22 @@ class DatabaseManager:
         cur.executemany(sql_insert, word_list)
         self.connection.commit()
         cur.close()
+    
+    def get_word_by_id(self, word_id: int) -> Optional[LexicalItem]:
+        """
+        Gets the word from the database by word_id.
+        Returns none if the word does not exist.
+        """
+        cur = self.connection.cursor()
+        cur.execute("SELECT word, pos, freq FROM words WHERE id=?", (word_id,))
+        word_data = cur.fetchone()
+
+        if word_data:
+            item, pos, freq = word_data
+            word = LexicalItem(item, pos, freq, word_id)
+            return word
+        else:
+            return None
 
     def query_first_ten_entries(self, table_name: str) -> None:
         """
@@ -187,7 +203,7 @@ class DatabaseManager:
         finally:
             cur.close()
 
-    def update_user_scores(self, user_id: int, lesson_scores: List[Score]) -> None:
+    def update_user_scores(self, user_id: int, lesson_scores: Set[Score]) -> None:
         # TODO add timestamp to user scores (either from lesson histor or smt).
         """
         Update user scores for the lesson scores which is a list of scores
@@ -216,7 +232,7 @@ class DatabaseManager:
             """, (user_id, score.word_id, score.score))
         self.connection.commit()
 
-    def retrieve_user_scores(self, user_id: int) -> List[Score]:
+    def retrieve_user_scores(self, user_id: int) -> Set[Score]:
         """
         Retrieves word score data of a user from the learning_data table
         and returnes them as a list of Score.
@@ -229,7 +245,7 @@ class DatabaseManager:
             raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
 
         cur.execute("SELECT word_id, score FROM learning_data WHERE user_id=?", (user_id,))
-        scores = [Score(word_id=row[0], score=row[1]) for row in cur.fetchall()]
+        scores = set([Score(word_id=row[0], score=row[1]) for row in cur.fetchall()])
         return scores
 
     def save_user_lesson_data(self, user_id: int, lesson_data: List[Evaluation]) -> None:
