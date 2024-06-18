@@ -8,7 +8,8 @@ from sqlite3 import IntegrityError, Connection
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Set
 from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, LexicalItem, Resource, Score, TaskType
-from task import Evaluation, OneWayTranslaitonTask, Task
+from evaluation import Evaluation
+from task import OneWayTranslaitonTask, Task
 from task_template import TaskTemplate
 
 DATABASE_PATH = "vocabulary_app.db"

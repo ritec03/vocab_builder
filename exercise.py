@@ -2,7 +2,8 @@ from abc import ABC, abstractmethod
 from typing import List, Set, Tuple
 from data_structures import NUM_NEW_WORDS_PER_LESSON, NUM_WORDS_PER_LESSON, LexicalItem, Score
 from database import DatabaseManager
-from task import Evaluation, Task
+from evaluation import Evaluation
+from task import Task
 from task_generator import TaskFactory
 from database import DB
 from itertools import chain
@@ -45,7 +46,7 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
     """
     def apply_correction(self, evaluation: Evaluation) -> Evaluation:
         # take last evaluation's task
-        previous_task = evaluation.get_last_history().task
+        previous_task = evaluation.get_last_task()
         # get new target words
         words_to_retry = evaluation.get_last_low_scored_words()
         # produce equivalent task for same lexical items
@@ -54,7 +55,8 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
         if new_task.id == previous_task.id:
             raise Exception("Implement criteria not to choose the same task.")
         user_response = input(new_task.produce_task())
-        evaluation = new_task.get_evaluation(user_response, evaluation)
+        evaluation_result = new_task.evaluate_user_input(user_response)
+        evaluation.add_entry(self.task, user_response, evaluation_result)
         return evaluation
 
 class HintStrategy(ErrorCorrectionStrategy):
@@ -110,7 +112,8 @@ class ExerciseSequence:
         """
         if self.attempt_count == 0:
             user_response = input(self.task.produce_task())
-            evaluation = self.task.get_evaluation(user_response, evaluation)
+            evaluation_result = self.task.evaluate_user_input(user_response)
+            evaluation.add_entry(self.task, user_response, evaluation_result)
         elif self.attempt_count > 0 and self.attempt_count < len(self.strategies_sequence):
             words_to_retry = evaluation.get_last_low_scored_words()
             if len(words_to_retry) > 0:        

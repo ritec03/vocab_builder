@@ -56,20 +56,6 @@ class Task(ABC):
         assign scores to all items in that set.
         """
         return self.evaluation_method.evaluate(self.correctAnswer, user_input, self.learning_items)
-
-    def get_evaluation(self, user_input: str, evaluation): # NOTE no type hint due to circular import of Evaluation
-        """
-        Evaluates the user's input against the correct answer and 
-        creates a new evaluation manager object with the latest evaluation added to it.
-        
-        :param user_input: The user's input as a response to the task.
-        :param evaluation: The EvaluationManager instance tracking the session's evaluation history.
-        :return: The evaluation result as a new and updated object.
-        """
-        evaluation_result = self.evaluate_user_input(user_input)
-        new_evaluation = copy.deepcopy(evaluation)
-        new_evaluation.add_entry(self, user_input, evaluation_result)
-        return new_evaluation
     
 class OneWayTranslaitonTask(Task):
     """
@@ -88,88 +74,3 @@ class OneWayTranslaitonTask(Task):
 
     def initialize_evaluation_method(self) -> EvaluationMethod:
         return AIEvaluation({"task": self.produce_task()})
-
-class HistoryEntry:
-    def __init__(self, task: Task, response: str, evaluation_result: Set[Score], correction=None):
-        # evaluation result is a list of tuples of word_id and score (multiple words can be evaluated
-        # in one evaluation)
-        # TODO evaluation result should restrict to one score per word.
-        self.task = task
-        self.response = response
-        self.evaluation_result = evaluation_result
-        self.correction = correction
-
-class Evaluation:
-    def __init__(self):
-        self.history: List[HistoryEntry] = []
-
-    def add_entry(self, task: Task, response: str, evaluation_result: Set[Score], correction=None):
-        entry = HistoryEntry(task, response, evaluation_result, correction)
-        self.history.append(entry)
-
-    def get_history(self):
-        return self.history
-    
-    def get_last_history(self) -> HistoryEntry:
-        return self.history[0]
-    
-    def get_last_scores(self) -> List[Score]:
-        """
-        Returns final score for the last evaluation (history entry)
-
-        :return: List[Score] a list of tuple of (word_id, score)
-        """
-        return self.get_last_history().evaluation_result
-
-    
-    def get_last_low_scored_words(self) -> Set[LexicalItem]:
-        last_low_scored_word_ids = list(map(
-                (lambda x: x.word_id),
-                filter(
-                    (lambda x: x.score < EXERCISE_THRESHOLD),
-                    self.get_last_scores()
-                )
-            )
-        )
-        words_to_retry = list(filter(
-                (lambda x: x.id in last_low_scored_word_ids),
-                self.get_last_history().task.learning_items
-            )
-        )
-        return words_to_retry
-    
-    def get_final_scores_latest(self) -> Set[Score]:
-        """
-        Returns final scores for all practiced words by 
-        getting the latest score for each word evaluated in history.
-        """
-        # iterate from the latest history
-        # create a set of word_ids
-        words: Set[int] = set()
-        final_scores: Set[Score] = set()
-        for history in reversed(self.history):
-            for score in history.evaluation_result:
-                if score.word_id not in words:
-                    final_scores.add(score)
-                    words.add(score.word_id)
-        return final_scores
-    
-    def get_final_scores_highest(self) -> Set[Score]:
-        """
-        Returns final scores for all practiced words by 
-        getting the highest score for each word evaluated in history.
-        """
-        all_scores = set().union(*[h.evaluation_result for h in self.history])
-        highest_scores_dict: Dict[str, Score] = {}
-        for score in list(all_scores):
-            if score.word_id not in highest_scores_dict or score.score > highest_scores_dict[score.word_id].score:
-                highest_scores_dict[score.word_id] = score
-    
-        highest_scores = set(highest_scores_dict.values())
-        return highest_scores
-
-    def to_json(self):
-        return {
-            "history": [entry.__dict__ for entry in self.history]
-        }
-
