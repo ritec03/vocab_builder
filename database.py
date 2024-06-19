@@ -342,7 +342,7 @@ class DatabaseManager:
                 template_id=template_row[0],
                 template_string=template_row[2],
                 template_description=template_row[3],
-                template_examples=template_row[4].split('\n'),
+                template_examples=json.loads(template_row[4]),
                 parameter_description=self.get_template_parameters(template_id),
                 starting_language=getattr(Language, template_row[5]),
                 target_language=getattr(Language, template_row[6]),
@@ -405,7 +405,7 @@ class DatabaseManager:
                     task_type=getattr(TaskType, template_row[1]),
                     template_string=template_row[2],
                     template_description=template_row[3],
-                    template_examples=template_row[4].split('\n'),  # TODO Change data type in schema to list?
+                    template_examples=json.loads(template_row[4]),
                     parameter_description=self.get_template_parameters(template_row[0]),
                     starting_language=getattr(Language, template_row[5]),
                     target_language=getattr(Language, template_row[6])
@@ -434,7 +434,7 @@ class DatabaseManager:
             cur.execute("""
                 INSERT INTO templates (task_type, template, description, examples, starting_language, target_language)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (task_type.name, template_string, template_description, "\n".join(template_examples), starting_language.name, target_language.name))
+            """, (task_type.name, template_string, template_description, json.dumps(template_examples), starting_language.name, target_language.name))
             template_id = cur.lastrowid
 
             # Insert template parameters into template_parameters table
