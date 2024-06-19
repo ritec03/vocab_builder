@@ -42,7 +42,7 @@ class TaskTemplate():
             raise ValueError("Unknown starting langauge")
 
         self.id = template_id
-        self.template = Template(template_string)
+        self._template = Template(template_string)
         self.description = template_description
         self.examples = template_examples
         self.parameter_description = parameter_description
@@ -51,13 +51,16 @@ class TaskTemplate():
         self.target_language = target_language
 
         try:
-            self.template.substitute(self.parameter_description)
+            self._template.substitute(self.parameter_description)
         except:
             raise ValueError("Parameter description contains wrong parameter number.")
 
         # if not self.template.is_valid():
         #     raise ValueError("Template is not a valid template")
         self.identifiers = [key for key, value in self.parameter_description.items()]
+
+    def get_template_string(self):
+        return self._template.template
 
     def set_id(self, id: int):
         if self.new:
@@ -72,7 +75,7 @@ class TaskTemplate():
         The produvided dictionary must be compatible with this template.
         """
         resource_strings = {key: resource.resource for key, resource in resources.items()}
-        filled_template = self.template.substitute(resource_strings)
+        filled_template = self._template.substitute(resource_strings)
         return filled_template
     
     def substitute_dummy(self) -> str:
@@ -81,7 +84,7 @@ class TaskTemplate():
         instead of actual resources.
         """
         dummy_resource_strings = {param: '[PLACEHOLDER]' for param in self.parameter_description}
-        filled_template = self.template.substitute(dummy_resource_strings)
+        filled_template = self._template.substitute(dummy_resource_strings)
         return filled_template
     
     def generate_dynamic_class(self) -> type:

@@ -50,7 +50,7 @@ def write_template_json(template: TaskTemplate, file_path: str):
     """
     template_dict = {
         "template_id": template.id,
-        "template_string": template.template.template,
+        "template_string": template.get_template_string(),
         "template_description": template.description,
         "template_examples": template.examples,
         "parameter_description": template.parameter_description,

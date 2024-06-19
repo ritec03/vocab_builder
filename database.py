@@ -430,7 +430,7 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
                     template.task_type.name, 
-                    template.template.template,
+                    template.get_template_string(),
                     template.description,
                     json.dumps(template.examples),
                     template.starting_language.name,

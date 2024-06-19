@@ -86,7 +86,7 @@ def create_task_generation_chain(task_template: TaskTemplate):
                 "starting_language": task_template.starting_language,
                 "target_language": task_template.target_language.name,
                 "format_instructions": output_json_parser.get_format_instructions(),
-                "template": task_template.template.template,
+                "template": task_template.get_template_string(),
                 "parameter_description": json.dumps(task_template.parameter_description),
                 "topics": choose_topic()
             }
