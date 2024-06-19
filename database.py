@@ -7,7 +7,7 @@ import sqlite3
 from sqlite3 import IntegrityError, Connection
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Set
-from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, LexicalItem, Resource, Score, TaskType
+from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, Language, LexicalItem, Resource, Score, TaskType
 from evaluation import Evaluation
 from task import OneWayTranslaitonTask, Task
 from task_template import TaskTemplate
@@ -344,6 +344,8 @@ class DatabaseManager:
                 template_description=template_row[3],
                 template_examples=template_row[4].split('\n'),
                 parameter_description=self.get_template_parameters(template_id),
+                starting_language=getattr(Language, template_row[5]),
+                target_language=getattr(Language, template_row[6]),
                 task_type=getattr(TaskType, template_row[1])
             )
             return template
@@ -375,8 +377,42 @@ class DatabaseManager:
 
         return parameters
 
-    def get_templates_by_task_type(task_type: TaskType) -> List[TaskTemplate]:
-        pass
+    def get_templates_by_task_type(self, task_type: TaskType) -> List[TaskTemplate]:
+        """
+        Retrieve a list of templates from the database based on the task type.
+
+        Args:
+            task_type (TaskType): The task type to filter templates.
+
+        Returns:
+            List[TaskTemplate]: A list of templates matching the task type, or an empty list if none found.
+        """
+        query = """
+            SELECT * 
+            FROM templates 
+            WHERE task_type = ?
+        """
+        cur = self.connection.cursor()
+        cur.execute(query, (task_type.name,))  # Pass task_type as a string using its name attribute
+        rows = cur.fetchall()
+
+        templates = []
+        if rows:
+            for template_row in rows:
+                # Extract template information from each row and construct TaskTemplate objects
+                template = TaskTemplate(
+                    template_id=template_row[0],
+                    task_type=getattr(TaskType, template_row[1]),
+                    template_string=template_row[2],
+                    template_description=template_row[3],
+                    template_examples=template_row[4].split('\n'),  # TODO Change data type in schema to list?
+                    parameter_description=self.get_template_parameters(template_row[0]),
+                    starting_language=getattr(Language, template_row[5]),
+                    target_language=getattr(Language, template_row[6])
+                )
+                templates.append(template)
+
+        return templates
 
     def add_template(
             self,
@@ -384,7 +420,9 @@ class DatabaseManager:
             template_description: str,
             template_examples: List[str],
             parameter_description: Dict[str, str],
-            task_type: TaskType
+            task_type: TaskType,
+            starting_language: Language,
+            target_language: Language
         ) -> TaskTemplate:
         """
         Adds template to database and returns the new template id.
@@ -394,9 +432,9 @@ class DatabaseManager:
         try:
             # Insert template into templates table
             cur.execute("""
-                INSERT INTO templates (task_type, template, description, examples)
-                VALUES (?, ?, ?, ?)
-            """, (task_type.name, template_string, template_description, "\n".join(template_examples)))
+                INSERT INTO templates (task_type, template, description, examples, starting_language, target_language)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (task_type.name, template_string, template_description, "\n".join(template_examples), starting_language.name, target_language.name))
             template_id = cur.lastrowid
 
             # Insert template parameters into template_parameters table
@@ -410,6 +448,8 @@ class DatabaseManager:
             print("Template added successfully.")
             template = TaskTemplate(
                 template_id, 
+                target_language,
+                starting_language,
                 template_string, 
                 template_description, 
                 template_examples, 
@@ -560,7 +600,7 @@ class DatabaseManager:
             print("Task added successfully.")
 
             # Initialize the Task object
-            template = self.get_template_by_id(template_id)  # You need to implement this method
+            template = self.get_template_by_id(template_id)
 
             if template.task_type == TaskType.ONE_WAY_TRANSLATION:
                 task = OneWayTranslaitonTask(template=template, resources=resources, learning_items=target_words, answer=answer, task_id=task_id)

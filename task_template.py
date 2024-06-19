@@ -6,8 +6,11 @@ from data_structures import Resource, TaskType
 
 class TaskTemplate():
     def __init__(
+            # TODO fix so that newly created templates do not have ids yet
             self,
-            template_id: int, 
+            template_id: int,
+            target_language: Language,
+            starting_language: Language,
             template_string: str, 
             template_description: str,
             template_examples: List[str],
@@ -22,7 +25,6 @@ class TaskTemplate():
         parameter description should have correct argument number
             and should describe the parameters that go into the template
         """
-        print(task_type)
         if not isinstance(template_id, int):
             raise ValueError("Passed id that is not an integer")
         elif not template_string or not isinstance(template_string, str):
@@ -31,8 +33,12 @@ class TaskTemplate():
             raise ValueError("Template description is empty or not a string.")
         elif not isinstance(template_examples, List) or not template_examples:
             raise ValueError("Template examples is empty list or not a list.")
-        elif task_type not in TaskType:
+        elif not isinstance(task_type, TaskType):
             raise ValueError("Unknown task type.")
+        elif not isinstance(target_language, Language):
+            raise ValueError("Unknown target langauge")
+        elif not isinstance(starting_language, Language):
+            raise ValueError("Unknown starting langauge")
 
         self.id = template_id
         self.template = Template(template_string)
@@ -40,6 +46,8 @@ class TaskTemplate():
         self.examples = template_examples
         self.parameter_description = parameter_description
         self.task_type = task_type
+        self.starting_language = starting_language
+        self.target_language = target_language
 
         try:
             self.template.substitute(self.parameter_description)

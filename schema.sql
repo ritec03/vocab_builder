@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS templates (
     template TEXT NOT NULL,
     description TEXT NOT NULL,
     examples TEXT NOT NULL, -- examples of template usage
+    starting_language TEXT NOT NULL,
+    target_language TEXT NOT NULL,
     UNIQUE (template)
 );
 

@@ -57,7 +57,7 @@ def create_task_generation_chain(task_template: TaskTemplate):
     # could possibly require a better output fixing behaviour.
     task_generation_prompt = PromptTemplate(
         template="""
-            You are a part of a program that helps with language learning.
+            You are a part of a program that helps learners that speak {starting_language} with language learning.
             You will be assisting in creating high quality exercises for learners.
             Exercises are created from tasks that are described in a task template
             that also contains information on the parameters that go into that tempalte.
@@ -67,7 +67,7 @@ def create_task_generation_chain(task_template: TaskTemplate):
             language.
             
             You role is to create these exercises with the provided template. The learners will then
-            solve the exerices you created. The target language is GERMAN. Do not provide resources
+            solve the exerices you created. The target language is {target_language}. Do not provide resources
             in other languages.
 
             Do not say anything else, just return the well-formatted JSON string.
@@ -83,6 +83,8 @@ def create_task_generation_chain(task_template: TaskTemplate):
             """,
             input_variables=["target_words"],
             partial_variables={
+                "starting_language": task_template.starting_language,
+                "target_language": task_template.target_language.name,
                 "format_instructions": output_json_parser.get_format_instructions(),
                 "template": task_template.template.template,
                 "parameter_description": json.dumps(task_template.parameter_description),

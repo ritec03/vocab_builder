@@ -1,40 +1,33 @@
-from data_structures import TaskType
+from data_structures import TaskType, Language
 from database import DB
 from task_template import TaskTemplate
+import random  # Import for random selection
 
+class TemplateRetriever():
 
-class TemplateRetriever():    
-    # TODO get template or generate it 
-    def get_random_template_for_task_type(self, task_type):
-        """provide a random template that adheres to the type"""
-        if task_type == TaskType.ONE_WAY_TRANSLATION:
-            template_string = (
-                "Translate the following into English:\n" +
-                "   '$sentence'"
-            )
-            task_template = TaskTemplate(
-                template_id=1,
-                template_string=template_string,
-                template_description="description",
-                template_examples=["example one", "example two"],
-                parameter_description={
-                    "sentence": "sentence in target language to be translated into english."
-                },
-                task_type=TaskType.ONE_WAY_TRANSLATION
-            )
-            try: 
-                added_task_template = DB.add_template(
-                    task_template.template.template,
-                    task_template.description,
-                    task_template.examples,
-                    task_template.parameter_description,
-                    task_template.task_type
-                )
-                return added_task_template
-            except:
-                return DB.get_template_by_id(1)
-        else:
+    def get_random_template_for_task_type(self, task_type: TaskType) -> TaskTemplate:
+        """
+        Provide a random template that adheres to the specified task type.
+
+        Args:
+            task_type (TaskType): The task type for which to retrieve a template.
+
+        Returns:
+            TaskTemplate: A randomly selected template of the given task type.
+
+        Raises:
+            ValueError: If no templates are found for the task type.
+        """
+        if not isinstance(task_type, TaskType):
             raise ValueError("No such task type exists.")
+        
+        templates = DB.get_templates_by_task_type(task_type)  # Retrieve templates by task type
+
+        if not templates:
+            raise ValueError("No templates available for the given task type.")
+
+        return random.choice(templates)  # Randomly select and return one template from the list
+
     
     def get_template_by_name(self, template_name):
         pass
