@@ -1,8 +1,9 @@
+from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
 from langchain_core.pydantic_v1 import BaseModel, Field, validator
 from string import Template
 from dataclasses import dataclass
-from data_structures import Resource, TaskType, Language
+from data_structures import FourChoiceAnswer, Resource, TaskType, Language
 
 class TaskTemplate():
     def __init__(
@@ -117,12 +118,32 @@ class TaskTemplate():
             validator_name = f'validate_{param_name}'
             attributes[validator_name] = validator(param_name, allow_reuse=True)(make_validator(param_name))
 
-        # Add a special 'answer' field
-        attributes['answer'] = Field(description="The correct answer to the task. Eg. if it is translation, provide correct translation, if it's multiple choice, provide correct option, and so on.")
-        attributes['__annotations__']['answer'] = str  # Assuming 'answer' is also of type str
+        attributes = self.create_answer_attributes_for_dynamic_class(attributes)
 
         # Use type() to dynamically create the class with the specified attributes
         dynamic_class = type('DynamicTemplateParameters', (BaseModel,), attributes)
 
         return dynamic_class
+    
+    def create_answer_attributes_for_dynamic_class(self, attributes: dict) -> dict:
+        """
+        Create answer attributes that are custom to each task type and add them to the provided attributes dictionary.
+
+        Args:
+            attributes (dict): The attributes dictionary where the new answer attributes will be added.
+
+        Returns:
+            dict: The updated attributes dictionary with the custom answer attributes.
+        """
+        if self.task_type == TaskType.ONE_WAY_TRANSLATION:
+            # For one-way translation tasks, the answer could be a simple string containing the translated sentence.
+            attributes['answer'] = Field(description="The correct translation of the given sentence.")
+            attributes['__annotations__']['answer'] = str
+        elif self.task_type == TaskType.FOUR_CHOICE:
+            # For four-choice tasks, the answer could be one of 'A', 'B', 'C', or 'D'.
+            attributes['answer'] = Field(description="The correct choice among (A, B, C, or D). The answer consists only of one corresponding letter.")
+            attributes['__annotations__']['answer'] = FourChoiceAnswer
+
+        return attributes
+
     

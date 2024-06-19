@@ -11,6 +11,12 @@ EXERCISE_THRESHOLD = MAX_SCORE/2
 NUM_WORDS_PER_LESSON = 4
 NUM_NEW_WORDS_PER_LESSON = floor(NUM_WORDS_PER_LESSON/3)
 
+class FourChoiceAnswer(Enum):
+    A = "A"
+    B = "B"
+    C = "C"
+    D = "D"
+
 @unique
 class Language(Enum):
     ENGLISH = 1
@@ -19,6 +25,7 @@ class Language(Enum):
 @unique
 class TaskType(Enum):
     ONE_WAY_TRANSLATION = 1
+    FOUR_CHOICE = 2
 
 # need frozen to be able to use with sets and to ensure that it does not change
 @dataclass(frozen=True)
