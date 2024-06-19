@@ -14,7 +14,7 @@
         "target_language": "GERMAN"
     },
     {
-        "template_string": "Which of the following coorectly translates the word \"$target_word\" into English??\n  a. '$A'\n   b. '$B'\n   c. '$C'\n   d. '$D'",
+        "template_string": "Which of the following coorectly translates the word \"$target_word\" into English?\n  a. '$A'\n   b. '$B'\n   c. '$C'\n   d. '$D'",
         "template_description": "This template is used for creating multiple choice questions about single word translation. Each question should be presented along with four possible answers, where only one is correct.",
         "template_examples": [
             "Which of the following coorectly translates the word \"Freiheit\" into English?\n   a. 'Liberty'\n   b. 'Expression'\n   c. 'Excitement'\n   d. 'Essence'",
@@ -30,5 +30,24 @@
         "task_type": "FOUR_CHOICE",
         "starting_language": "ENGLISH",
         "target_language": "GERMAN"
+    },
+    {
+        "template_string": "Which of the following words fits the blank in the following sentence \"$sentence\"?\n  a. '$A'\n   b. '$B'\n   c. '$C'\n   d. '$D'",
+        "template_description": "This template is used for creating multiple choice questions about choosing the best fitting word for a blank. Each question should be presented along with four possible answers, where only one is correct.",
+        "template_examples": [
+            "Which of the following words fits the blank in the following sentence 'Er ging zum ___ um Brot zu kaufen.'?\n  a. 'Supermarkt'\n   b. 'Badezimmer'\n   c. 'Keller'\n   d. 'Dach'",
+            "Which of the following words fits the blank in the following sentence 'Sie hat das Buch auf den ___ gelegt.'?\n  a. 'Boden'\n   b. 'Tisch'\n   c. 'Stuhl'\n   d. 'Schrank'"
+        ],
+        "parameter_description": {
+            "sentence": "Sentence with a blank indicating a missing word, where the missing words will be one of the given choices A to D.",
+            "A": "Option a of the multiple choice question.",
+            "B": "Option b of the multiple choice question.",
+            "C": "Option c of the multiple choice question.",
+            "D": "Option d of the multiple choice question."
+        },
+        "task_type": "FOUR_CHOICE",
+        "starting_language": "ENGLISH",
+        "target_language": "GERMAN"
     }
+    
 ]
