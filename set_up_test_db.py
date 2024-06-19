@@ -26,7 +26,6 @@ def read_templates_from_json(file_path: str) -> List[TaskTemplate]:
     for item in data:
         try:
             template = TaskTemplate(
-                template_id=item["template_id"],
                 template_string=item["template_string"],
                 template_description=item["template_description"],
                 template_examples=item["template_examples"],
@@ -77,15 +76,7 @@ if __name__ == "__main__":
     DB.add_words_to_db(list_of_tuples)
     
     for template in templates:
-        added_task_template = DB.add_template(
-            template.template.template,
-            template.description,
-            template.examples,
-            template.parameter_description,
-            template.task_type,
-            template.starting_language,
-            template.target_language
-        )
+        added_task_template = DB.add_template(template)
     
     # create user 
     user_id = DB.insert_user("test_user")

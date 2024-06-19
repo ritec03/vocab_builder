@@ -1,21 +1,20 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 from langchain_core.pydantic_v1 import BaseModel, Field, validator
 from string import Template
 from dataclasses import dataclass
-from data_structures import Resource, TaskType
+from data_structures import Resource, TaskType, Language
 
 class TaskTemplate():
     def __init__(
-            # TODO fix so that newly created templates do not have ids yet
             self,
-            template_id: int,
             target_language: Language,
             starting_language: Language,
-            template_string: str, 
+            template_string: str,
             template_description: str,
             template_examples: List[str],
             parameter_description: Dict[str, str],
-            task_type: TaskType
+            task_type: TaskType,
+            template_id: Optional[int] = None,
         ):
         """
         template id should be a valid int
@@ -25,7 +24,9 @@ class TaskTemplate():
         parameter description should have correct argument number
             and should describe the parameters that go into the template
         """
-        if not isinstance(template_id, int):
+        if not template_id:
+            self.new = True
+        elif not isinstance(template_id, int):
             raise ValueError("Passed id that is not an integer")
         elif not template_string or not isinstance(template_string, str):
             raise ValueError("Template string s empty or not a string.")
@@ -57,6 +58,13 @@ class TaskTemplate():
         # if not self.template.is_valid():
         #     raise ValueError("Template is not a valid template")
         self.identifiers = [key for key, value in self.parameter_description.items()]
+
+    def set_id(self, id: int):
+        if self.new:
+            self.id = id
+            self.new = False
+        else:
+            raise ValueError("The id has already been set.")
 
     def substitute(self, resources: Dict[str, Resource]) -> str:
         """

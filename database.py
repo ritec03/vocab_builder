@@ -416,13 +416,7 @@ class DatabaseManager:
 
     def add_template(
             self,
-            template_string: str,
-            template_description: str,
-            template_examples: List[str],
-            parameter_description: Dict[str, str],
-            task_type: TaskType,
-            starting_language: Language,
-            target_language: Language
+            template: TaskTemplate
         ) -> TaskTemplate:
         """
         Adds template to database and returns the new template id.
@@ -434,11 +428,19 @@ class DatabaseManager:
             cur.execute("""
                 INSERT INTO templates (task_type, template, description, examples, starting_language, target_language)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (task_type.name, template_string, template_description, json.dumps(template_examples), starting_language.name, target_language.name))
+            """, (
+                    template.task_type.name, 
+                    template.template.template,
+                    template.description,
+                    json.dumps(template.examples),
+                    template.starting_language.name,
+                    template.target_language.name
+                )
+            )
             template_id = cur.lastrowid
 
             # Insert template parameters into template_parameters table
-            for param_name, param_desc in parameter_description.items():
+            for param_name, param_desc in template.parameter_description.items():
                 cur.execute("""
                     INSERT INTO template_parameters (name, description, template_id)
                     VALUES (?, ?, ?)
@@ -446,16 +448,7 @@ class DatabaseManager:
 
             self.connection.commit()
             print("Template added successfully.")
-            template = TaskTemplate(
-                template_id, 
-                target_language,
-                starting_language,
-                template_string, 
-                template_description, 
-                template_examples, 
-                parameter_description, 
-                task_type
-            )
+            template.set_id(template_id)
             return template
         except Exception as e:
             # Handle any errors
