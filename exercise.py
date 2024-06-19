@@ -56,7 +56,7 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
             raise Exception("Implement criteria not to choose the same task.")
         user_response = input(new_task.produce_task())
         evaluation_result = new_task.evaluate_user_input(user_response)
-        evaluation.add_entry(self.task, user_response, evaluation_result)
+        evaluation.add_entry(new_task, user_response, evaluation_result)
         return evaluation
 
 class HintStrategy(ErrorCorrectionStrategy):
