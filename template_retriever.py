@@ -24,7 +24,7 @@ class TemplateRetriever():
         templates = DB.get_templates_by_task_type(task_type)  # Retrieve templates by task type
 
         if not templates:
-            raise ValueError("No templates available for the given task type.")
+            raise ValueError("No templates available for the given task type. ", task_type.name)
 
         return random.choice(templates)  # Randomly select and return one template from the list
 
