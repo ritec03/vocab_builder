@@ -1,5 +1,6 @@
 
 from datetime import datetime
+import json
 from typing import Dict, List, Optional, Set, Tuple
 import pandas as pd
 from sqlalchemy import CheckConstraint, ForeignKey, UniqueConstraint, and_, update
@@ -69,6 +70,7 @@ class TemplateDBObj(Base):
     examples: Mapped[str] = mapped_column(JSON) 
     starting_language: Mapped[str]
     target_language: Mapped[str]
+    parameters = relationship("TemplateParameterDBObj", back_populates="template")
 
 class TemplateParameterDBObj(Base):
     __tablename__ = "template_parameters"
@@ -77,6 +79,7 @@ class TemplateParameterDBObj(Base):
     name: Mapped[str] = mapped_column(unique=False)
     description: Mapped[str]
     template_id = mapped_column(ForeignKey("templates.id"))
+    template = relationship("TemplateDBObj", back_populates="parameters")
     __table_args__ = (UniqueConstraint("template_id", "name"),)
 
 class TaskDBObj(Base):
@@ -394,16 +397,39 @@ class DatabaseManager():
     def add_template(
             self,
             template: TaskTemplate
-        ) -> TaskTemplate:
+        ) -> int:
         """
         Adds template to database and returns the new template id.
-        If a template with the same name exist, return value error.
+        If a template with the same template_string exist, return value error.
         """
-        raise NotImplementedError()
+        template_obj = TemplateDBObj(
+                task_type=template.task_type,
+                template=template.get_template_string(),
+                description=template.description,
+                examples=json.dumps(template.examples),
+                starting_language=template.starting_language,
+                target_language=template.target_language,
+            )
+        self.session.add(template_obj)
+        for param_key in template.parameter_description:
+            param_obj = TemplateParameterDBObj(
+                name=param_key,
+                description=template.parameter_description[param_key],
+            )
+            template_obj.parameters.append(param_obj)
+            try:
+                self.session.flush()
+            except IntegrityError as e:
+                self.session.rollback()
+                raise ValueError("the following error occured: ", e)
+        template_id = template_obj.id
+        self.session.commit()
+        return template_id
+
 
     def remove_template(template_name: str) -> None:
         """
-        Removes template with template_name from the database and ALL
+        Removes template with template_string from the database and ALL
         associated tasks that use this template.
         """
         raise NotImplementedError()
@@ -418,7 +444,29 @@ class DatabaseManager():
         Returns:
             Optional[TaskTemplate]: The retrieved template, or None if not found.
         """
-        raise NotImplementedError()
+        stmt = select(TemplateDBObj).where(TemplateDBObj.id == template_id)
+        rows = self.session.scalars(stmt).all()
+        if len(rows) == 0:
+            return None
+        elif len(rows) == 1:
+            template_obj = rows[0]
+            parameters = {}
+            for param in template_obj.parameters:
+                parameters[param.name] = param.description
+
+            template = TaskTemplate(
+                target_language=template_obj.target_language,
+                starting_language=template_obj.starting_language,
+                template_string=template_obj.template,
+                template_description=template_obj.description,
+                template_examples=json.loads(template_obj.examples),
+                parameter_description=parameters,
+                task_type=TaskType.ONE_WAY_TRANSLATION
+            )
+            return template
+        else:
+            raise KeyError(f"User id {template_id} is not unique.")
+
     
     def get_template_parameters(self, template_id: int) -> dict:
         """

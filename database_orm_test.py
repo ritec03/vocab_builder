@@ -1,4 +1,5 @@
 import json
+from typing import Dict
 import unittest
 import sqlite3
 
@@ -299,3 +300,107 @@ class TestRetrieveUserScores(unittest.TestCase):
         """
         with self.assertRaises(ValueDoesNotExistInDB):
             self.db_manager.retrieve_user_scores(9999)  # Assuming 9999 is an ID that does not exist
+
+class TestAddTemplate(unittest.TestCase):
+    def setUp(self):
+        """
+        Set up the environment before each test.
+        """
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+
+        # Insert test data
+        user_id = self.db_manager.insert_user("test_user")
+        word_ids = self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
+        
+        self.template_string = "test template string"
+        self.template_description = "test description"
+        self.template_examples = ["example 1", "example 2"]
+        self.starting_language = "example language start"
+        self.target_language = "example language target"
+        self.parameter_description = {
+            "sentence": "Sentence in target language to be translated into English.",
+            "phrase": "Phrase in target language to be translated into English."
+        }
+
+    def tearDown(self):
+        # Close the database session and delete the test database file
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_add_get_template(self):
+        # create template
+        template = TaskTemplate(
+            target_language=self.target_language,
+            starting_language=self.starting_language,
+            template_string=self.template_string,
+            template_description=self.template_description,
+            template_examples=self.template_examples,
+            parameter_description=self.parameter_description,
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+
+        # add template
+        template_id = self.db_manager.add_template(template)
+        
+        # retrieve and check template
+        retrieved_template = self.db_manager.get_template_by_id(template_id)
+
+        # check the template
+        self.assertEqual(retrieved_template.starting_language, template.starting_language)
+        self.assertEqual(retrieved_template.target_language, template.target_language)
+        self.assertEqual(retrieved_template.get_template_string(), template.get_template_string())
+        self.assertEqual(retrieved_template.description, template.description)
+        self.assertEqual(retrieved_template.examples, template.examples)
+        self.assertEqual(retrieved_template.parameter_description, template.parameter_description)
+        self.assertEqual(retrieved_template.task_type, template.task_type)
+
+
+
+    def test_add_template_duplicate_template_string(self):
+        template_1 = TaskTemplate(
+            target_language=self.target_language,
+            starting_language=self.starting_language,
+            template_string=self.template_string,
+            template_description=self.template_description,
+            template_examples=self.template_examples,
+            parameter_description=self.parameter_description,
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+
+        template_2 = TaskTemplate(
+            target_language=self.target_language + "blah",
+            starting_language=self.starting_language + "blah",
+            template_string=self.template_string, # keep the same
+            template_description=self.template_description + "blah",
+            template_examples=self.template_examples +  ["blah"],
+            parameter_description={**self.parameter_description, **{"blah": "blah"}},
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+
+        self.db_manager.add_template(template_1)
+        with self.assertRaises(ValueError):
+            self.db_manager.add_template(template_2)
+
+    def test_add_template_incorrect_task_type():
+        pass
+
+    # def test_add_template_repeated_parameter_name(self):
+    #     template_2 = TaskTemplate(
+    #         target_language=self.target_language + "blah",
+    #         starting_language=self.starting_language + "blah",
+    #         template_string=self.template_string, # keep the same
+    #         template_description=self.template_description + "blah",
+    #         template_examples=self.template_examples +  ["blah"],
+    #         parameter_description={"one": "blah", "one":"bleh", "two": "blah"},
+    #         task_type=TaskType.ONE_WAY_TRANSLATION
+    #     )
+    #     with self.assertRaises(ValueError):
+    #         self.db_manager.add_template(template_2)
+
+    def test_add_template_examples_not_json():
+        pass
+
+    def test_add_template_missing_field():
+        pass
+    
