@@ -1,6 +1,6 @@
 
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 import pandas as pd
 from sqlalchemy import CheckConstraint, ForeignKey, UniqueConstraint, and_, update
 from sqlalchemy import Enum
@@ -22,6 +22,8 @@ from database import ValueDoesNotExistInDB
 
 from sqlalchemy.engine import Engine
 from sqlalchemy import event
+
+from task_template import TaskTemplate
 
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
@@ -254,7 +256,7 @@ class DatabaseManager():
             self.session.flush()
             self.session.commit()
             return user.id
-        except IntegrityError:
+        except IntegrityError as e:
             raise ValueError(f"User '{user_name}' already exists in the database.")
 
     def get_user_by_id(self, user_id: int) -> Optional[UserDBObj]:
@@ -335,6 +337,115 @@ class DatabaseManager():
         ).scalar()
         return entry.score if entry else None
         
+    def update_user_scores(self, user_id: int, lesson_scores: Set[Score]) -> None:
+        """
+        Update user scores for the lesson scores which is a list of scores
+        for each word_id. If the word with a score for the user is already in db,
+        udpate it, add it otherwise.
+        If non existent user - raise ValueDoesNotExistInDB
+        If ther eis a word or words that are not in db - raise ValueDoesNotExistInDB
+        """
+        # Verify user exists
+        user = self.session.get(UserDBObj, user_id)
+        if not user:
+            raise ValueDoesNotExistInDB("User does not exist")
+
+        # Process each score
+        for score in lesson_scores:
+            # Verify word exists
+            word = self.session.get(WordDBObj, score.word_id)
+            if not word:
+                raise ValueDoesNotExistInDB("Word does not exist")
+
+            # Add or update the score
+            existing_score = self.session.execute(
+                select(LearningDataDBObj).where(
+                    LearningDataDBObj.user_id == user_id,
+                    LearningDataDBObj.word_id == score.word_id
+                )
+            ).scalar()
+            
+            if existing_score:
+                existing_score.score = score.score
+            else:
+                new_score = LearningDataDBObj(user_id=user_id, word_id=score.word_id, score=score.score)
+                self.session.add(new_score)
+        
+        self.session.commit()
+    
+    def retrieve_user_scores(self, user_id: int) -> Dict[int, Score]:
+        """
+        Retrieves word score data of a user from the learning_data table
+        and returns them as a dictionary with keys of word ids and values of scores.
+        Raises ValueDoesNotExistInDB error if non-existent user is requested.
+        """
+        # First, check if the user exists in the database
+        if not self.session.get(UserDBObj, user_id):
+            raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
+
+        # Query to fetch all scores for the user
+        scores_query = select(LearningDataDBObj).where(LearningDataDBObj.user_id == user_id)
+        scores = self.session.execute(scores_query).scalars().all()
+
+        # Convert the ORM objects to Score dataclass instances
+        result = {score.word_id: Score(word_id=score.word_id, score=score.score) for score in scores}
+        return result
+
+    def add_template(
+            self,
+            template: TaskTemplate
+        ) -> TaskTemplate:
+        """
+        Adds template to database and returns the new template id.
+        If a template with the same name exist, return value error.
+        """
+        raise NotImplementedError()
+
+    def remove_template(template_name: str) -> None:
+        """
+        Removes template with template_name from the database and ALL
+        associated tasks that use this template.
+        """
+        raise NotImplementedError()
+
+    def get_template_by_id(self, template_id: int) -> Optional[TaskTemplate]:
+        """
+        Retrieve a template from the database based on its ID.
+
+        Args:
+            template_id (int): The ID of the template to retrieve.
+
+        Returns:
+            Optional[TaskTemplate]: The retrieved template, or None if not found.
+        """
+        raise NotImplementedError()
+    
+    def get_template_parameters(self, template_id: int) -> dict:
+        """
+        Retrieve parameter descriptions for a template from the database.
+
+        Args:
+            template_id (int): The ID of the template.
+
+        Returns:
+            dict: A dictionary mapping parameter names to descriptions.
+        """
+        raise NotImplementedError()
+
+
+    def get_templates_by_task_type(self, task_type: TaskType) -> List[TaskTemplate]:
+        """
+        Retrieve a list of templates from the database based on the task type.
+
+        Args:
+            task_type (TaskType): The task type to filter templates.
+
+        Returns:
+            List[TaskTemplate]: A list of templates matching the task type, or an empty list if none found.
+        """
+        raise NotImplementedError()
+
+
 
 if __name__ == "__main__":
     word_freq_output_file_path = "word_freq.txt"

@@ -177,3 +177,125 @@ class TestDatabaseFunctions(unittest.TestCase):
             self.db_manager.add_word_score(user_id, Score(word_id, MIN_SCORE - 1))  # Attempting to add a negative score should raise an error
         with self.assertRaises(ValueError):
             self.db_manager.add_word_score(user_id, Score(word_id, MAX_SCORE + 1))  # Attempting to add a score above the maximum should raise an error
+
+class TestUpdateUserScores(unittest.TestCase):
+    def setUp(self):
+        # Ensure the test database does not exist before starting each test
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        
+        # Initialize the database manager
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+
+        # Insert a test user and predefined words
+        user_id = self.db_manager.insert_user("test_user")
+        word_list = [("word1", "noun", 1), ("word2", "verb", 2), ("word3", "adj", 3)]
+        word_ids = self.db_manager.add_words_to_db(word_list)
+
+        # Store user_id and word_ids for use in tests
+        self.user_id = user_id
+        self.word_ids = word_ids
+
+    def tearDown(self):
+        # Close the database session and delete the test database file
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_update_user_scores_single_score_update(self):
+        # Test adding a single score and updating it
+        initial_scores = {Score(word_id=self.word_ids[0], score=5)}
+        updated_scores = {Score(word_id=self.word_ids[0], score=7)}
+        self.db_manager.update_user_scores(self.user_id, initial_scores)
+        self.db_manager.update_user_scores(self.user_id, updated_scores)
+        score = self.db_manager.get_score(self.user_id, self.word_ids[0])
+
+        # Assert that the score is updated correctly
+        self.assertEqual(score, updated_scores.pop().score)
+
+    def test_update_user_scores_multiple_scores_update(self):
+        # Prepare the initial and updated scores
+        initial_scores = {Score(word_id=id, score=3 + i) for i, id in enumerate(self.word_ids)}
+        updated_scores = {Score(word_id=self.word_ids[0], score=8), Score(word_id=self.word_ids[1], score=9)}
+        
+        # Apply the initial scores to the database
+        self.db_manager.update_user_scores(self.user_id, initial_scores)
+        
+        # Update the scores with the new values
+        self.db_manager.update_user_scores(self.user_id, updated_scores)
+        
+        # Retrieve the scores from the database
+        actual_scores_dict = self.db_manager.retrieve_user_scores(self.user_id)
+        
+        # Convert dictionary to set of Scores for easier comparison
+        actual_scores = set(actual_scores_dict.values())
+
+        # Prepare the expected scores set
+        expected_scores = updated_scores.union({Score(word_id=self.word_ids[2], score=5)})  # Include the unchanged score
+        
+        # Assert that the sets are equal, confirming both updates and non-changes
+        self.assertEqual(actual_scores, expected_scores)
+
+
+    def test_update_user_scores_nonexistent_word(self):
+        # Test updating scores for a non-existent word
+        scores = {Score(word_id=9999, score=7)}  # Assuming 9999 does not exist
+        with self.assertRaises(ValueDoesNotExistInDB):
+            self.db_manager.update_user_scores(self.user_id, scores)
+
+    def test_update_user_scores_nonexistent_user(self):
+        # Test updating scores for a non-existent user
+        scores = {Score(word_id=self.word_ids[0], score=7)}
+        with self.assertRaises(ValueDoesNotExistInDB):
+            self.db_manager.update_user_scores(9999, scores)  # Assuming 9999 is a non-existent user ID
+
+class TestRetrieveUserScores(unittest.TestCase):
+    def setUp(self):
+        """
+        Set up the environment before each test.
+        """
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+
+        # Insert test data
+        user_id = self.db_manager.insert_user("test_user")
+        word_ids = self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
+        
+        # Add scores for both words for the user
+        self.db_manager.add_word_score(user_id, Score(word_ids[0], 5))
+        self.db_manager.add_word_score(user_id, Score(word_ids[1], 8))
+
+        self.user_id = user_id
+        self.word_ids = word_ids
+
+    def tearDown(self):
+        # Close the database session and delete the test database file
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_user_with_scores(self):
+        """
+        Test retrieving scores for a user with existing scores.
+        """
+        scores = self.db_manager.retrieve_user_scores(self.user_id)
+        self.assertIsInstance(scores, dict)
+        self.assertEqual(len(scores), 2)  # Expecting scores for 2 words
+        # Check specific scores
+        self.assertEqual(scores.get(self.word_ids[0]).score, 5)
+        self.assertEqual(scores.get(self.word_ids[1]).score, 8)
+
+    def test_user_without_scores(self):
+        """
+        Test retrieving scores for a user without scores.
+        """
+        another_user_id = self.db_manager.insert_user("another_user")
+        scores = self.db_manager.retrieve_user_scores(another_user_id)
+        self.assertIsInstance(scores, dict)
+        self.assertEqual(len(scores), 0)
+
+    def test_nonexistent_user(self):
+        """
+        Test retrieving scores for a nonexistent user.
+        """
+        with self.assertRaises(ValueDoesNotExistInDB):
+            self.db_manager.retrieve_user_scores(9999)  # Assuming 9999 is an ID that does not exist
