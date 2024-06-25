@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import List, Optional, Tuple
 import pandas as pd
-from sqlalchemy import CheckConstraint, ForeignKey, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, UniqueConstraint, and_, update
 from sqlalchemy import Enum
 from sqlalchemy import func
 from sqlalchemy import Integer
@@ -13,9 +13,21 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy import create_engine
-from data_structures import LexicalItem, TaskType
+from data_structures import MAX_USER_NAME_LENGTH, LexicalItem, Score, TaskType, MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
+from database import ValueDoesNotExistInDB
+
+from sqlalchemy.engine import Engine
+from sqlalchemy import event
+
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 class Base(DeclarativeBase):
     pass
@@ -142,12 +154,15 @@ class EntryScoreDBObj(Base):
     __table_args__ = (UniqueConstraint('history_entry_id', 'word_id'),)
 
 class DatabaseManager():
-    def __init__(self):
-        engine = create_engine("sqlite:///vocabulary_db.db", echo=True)
+    def __init__(self, db_path: str):
+        engine = create_engine("sqlite:///" + db_path, echo=True)
         Base.metadata.create_all(engine)
         self.session = Session(engine)
+        
+    def close(self):
+        self.session.close()
 
-    def add_words_to_db(self, word_list: List[Tuple[str, str, int]]) -> None:
+    def add_words_to_db(self, word_list: List[Tuple[str, str, int]]) -> List[int]:
         """
         Insert tuples of (word, part-of-speech, frequency) into words table.
         If a combination of (word, pos) already exists in the database,
@@ -156,13 +171,50 @@ class DatabaseManager():
         Args:
             word_list (List[Tuple[str, str, int]]): list of tuples of (word, pos, freq),
                 eg. [("Schule", "NOUN", 234), ...]
+
+        Returns:
+            List[int]: a list of inserted word_ids
         """
+        word_ids = []
         for word_tuple in word_list:
             word, pos, freq = word_tuple
             word_object = WordDBObj(word=word, pos=pos, freq=freq)
-            self.session.add(word_object)
-        self.session.flush()
+            # check if combination of word-pos exist
+            try:
+                self.session.add(word_object)
+                print("Error happens here")
+                self.session.flush()
+                word_ids.append(word_object.id)
+            except IntegrityError:
+                self.session.rollback()
+                word = self.get_word_pos(word_object.word, word_object.pos)
+                if not word:
+                    raise
+                else:
+                    # UPDATE word freq
+                    word.freq = freq
+                    self.session.flush()
+                    word_ids.append(word.id)
+            
         self.session.commit()
+        return word_ids
+    
+    def get_word_pos(self, word: str, pos: str) -> Optional[WordDBObj]:
+        """
+        WordDBObj with word and pos that is in DB or None.
+        Raise:
+            ValueError if more than one word-pos entry is found.
+        """
+        stmt = select(WordDBObj).where(and_(WordDBObj.word == word, WordDBObj.pos == pos))
+        rows = self.session.scalars(stmt).all()
+        if len(rows) == 0:
+            return None
+        elif len(rows) == 1:
+            word = rows[0]
+            return word
+        else:
+            raise ValueError(f"More than one word-pos {word}-{pos} entry found.")
+
 
     def get_word_by_id(self, word_id: int) -> Optional[LexicalItem]:
         """
@@ -178,6 +230,111 @@ class DatabaseManager():
             return LexicalItem(word.word, word.pos, word.freq, word.id)
         else:
             return None
+        
+    def insert_user(self, user_name: str) -> int:
+        """
+        Insert a new user into the users table and return the user ID.
+
+        Args:
+            user_name (str): Username of the user to insert.
+
+        Raises:
+            ValueError: If the user already exists in the database.
+            ValueError: If the user name is not a string or is longer than MAX_USER_NAME_LENGTH.
+
+        Returns:
+            int: The user ID of the newly inserted user.
+        """
+        if not isinstance(user_name, str) or len(user_name) > MAX_USER_NAME_LENGTH:
+            raise ValueError("Username is not a string or too long.")
+        
+        try:
+            user = UserDBObj(user_name=user_name)
+            self.session.add(user)
+            self.session.flush()
+            self.session.commit()
+            return user.id
+        except IntegrityError:
+            raise ValueError(f"User '{user_name}' already exists in the database.")
+
+    def get_user_by_id(self, user_id: int) -> Optional[UserDBObj]:
+        """
+        Return UserDBObj with user_id.
+
+        Args:
+            user_id: int - user id
+        Raises?
+
+        Returns:
+            UserDBObj: user database object 
+            None if no user is found
+        """
+        statement = select(UserDBObj).where(UserDBObj.id == user_id)
+        rows = self.session.scalars(statement).all()
+        if len(rows) == 0:
+            return None
+        elif len(rows) == 1:
+            word = rows[0]
+            return word
+        else:
+            raise KeyError(f"User id {user_id} is not unique.")
+    
+    def remove_user(self, user_id: int) -> None:
+        """
+        # TODO also delete data from the lesson data table ???
+        Remove user with user_id from users table
+        and remove all associated rows in learning_data.
+
+        Args:
+            user_id (int): ID of the user to remove.
+        
+        Raises:
+            ValueDoesNotExistInDB if the user with user_id does not exist
+        """
+        user = self.session.get(UserDBObj, user_id)
+        if not user:
+            raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
+        else:
+            self.session.delete(user)
+            self.session.flush()
+            print(f"User with ID {user_id} removed successfully.")
+        self.session.commit()
+
+    def add_word_score(self, user_id: int, score: Score):
+        """
+            Adds or updates a row in learning_data for the user with user_id
+            for word_id with the given score. Score should be between MIN_SCORE and MAX_SCORE.
+            If a score for the word already exists for the user, it is updated.
+
+            Args:
+                user_id (int): ID of the user.
+                word_id (int): ID of the word.
+                score (int): Score to add (MIN_SCORE and MAX_SCORE).
+        """
+        if not MIN_SCORE <= score.score <= MAX_SCORE:
+            raise ValueError(f"Score should be between {MIN_SCORE} and {MAX_SCORE}.")
+
+        # Check if score exists, update if yes, else create new
+        entry = self.session.execute(
+            select(LearningDataDBObj).where(and_(LearningDataDBObj.user_id == user_id, LearningDataDBObj.word_id == score.word_id))
+        ).scalar()
+        if entry:
+            entry.score = score.score
+        else:
+            try:
+                new_entry = LearningDataDBObj(user_id=user_id, word_id=score.word_id, score=score.score)
+                self.session.add(new_entry)
+                self.session.flush()
+            except IntegrityError:
+                raise ValueDoesNotExistInDB("User or word id invalid.")
+        self.session.commit()
+
+    def get_score(self, user_id, word_id):
+        entry = self.session.execute(
+            select(LearningDataDBObj).where(LearningDataDBObj.user_id == user_id, LearningDataDBObj.word_id == word_id)
+        ).scalar()
+        return entry.score if entry else None
+        
 
 if __name__ == "__main__":
     word_freq_output_file_path = "word_freq.txt"
