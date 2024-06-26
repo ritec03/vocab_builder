@@ -14,7 +14,7 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy import create_engine
-from data_structures import MAX_USER_NAME_LENGTH, LexicalItem, Score, TaskType, MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE
+from data_structures import MAX_USER_NAME_LENGTH, LexicalItem, Resource, Score, TaskType, MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -49,6 +49,7 @@ class WordDBObj(Base):
     word: Mapped[str]
     pos: Mapped[str]
     freq: Mapped[int]
+    resources = relationship("ResourceWordDBObj", back_populates="word")
     __table_args__ = (UniqueConstraint('word', 'pos'),)
 
 class LearningDataDBObj(Base):
@@ -101,6 +102,18 @@ class ResourceDBObj(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     resource_text: Mapped[str]
+    words = relationship("ResourceWordDBObj", back_populates="resources")
+
+class ResourceWordDBObj(Base):
+    __tablename__ = "resource_words"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    resource_id = mapped_column(Integer, ForeignKey("resources.id"))
+    word_id = mapped_column(Integer, ForeignKey("words.id"))
+    resources = relationship("ResourceDBObj", back_populates="words")
+    word = relationship("WordDBObj", back_populates="resources")
+    # each word appears in a resource once only
+    __table_args__ = (UniqueConstraint('resource_id', 'word_id'),)
 
 class TaskResourceDBObj(Base):
     __tablename__ = "task_resources"
@@ -111,14 +124,6 @@ class TaskResourceDBObj(Base):
     parameter_id = mapped_column(Integer, ForeignKey("template_parameters.id"))
     # TODO add constraint not to include parameters that are not parameters for that template
     __table_args__ = (UniqueConstraint("parameter_id", "task_id"),)
-
-class ResourceWordDBObj(Base):
-    __tablename__ = "resource_words"
-
-    resource_id = mapped_column(Integer, ForeignKey("resources.id"), primary_key=True)
-    word_id = mapped_column(Integer, ForeignKey("words.id"), primary_key=True)
-    # each word appears in a resource once only
-    __table_args__ = (UniqueConstraint('resource_id', 'word_id'),)
 
 from sqlalchemy import TIMESTAMP
 
@@ -393,6 +398,22 @@ class DatabaseManager():
         # Convert the ORM objects to Score dataclass instances
         result = {score.word_id: Score(word_id=score.word_id, score=score.score) for score in scores}
         return result
+    
+    def convert_template_obj(self, template_obj: TemplateDBObj) -> TaskTemplate:
+        parameters = {}
+        for param in template_obj.parameters:
+            parameters[param.name] = param.description
+
+        template = TaskTemplate(
+                target_language=template_obj.target_language,
+                starting_language=template_obj.starting_language,
+                template_string=template_obj.template,
+                template_description=template_obj.description,
+                template_examples=json.loads(template_obj.examples),
+                parameter_description=parameters,
+                task_type=TaskType.ONE_WAY_TRANSLATION
+            )
+        return template
 
     def add_template(
             self,
@@ -420,6 +441,9 @@ class DatabaseManager():
             try:
                 self.session.flush()
             except IntegrityError as e:
+                self.session.rollback()
+                raise ValueError("the following error occured: ", e)
+            except Exception as e: # TODO change error handling
                 self.session.rollback()
                 raise ValueError("the following error occured: ", e)
         template_id = template_obj.id
@@ -450,25 +474,13 @@ class DatabaseManager():
             return None
         elif len(rows) == 1:
             template_obj = rows[0]
-            parameters = {}
-            for param in template_obj.parameters:
-                parameters[param.name] = param.description
-
-            template = TaskTemplate(
-                target_language=template_obj.target_language,
-                starting_language=template_obj.starting_language,
-                template_string=template_obj.template,
-                template_description=template_obj.description,
-                template_examples=json.loads(template_obj.examples),
-                parameter_description=parameters,
-                task_type=TaskType.ONE_WAY_TRANSLATION
-            )
+            template = self.convert_template_obj(template_obj)
             return template
         else:
             raise KeyError(f"User id {template_id} is not unique.")
 
     
-    def get_template_parameters(self, template_id: int) -> dict:
+    def get_template_parameters(self, template_id: int) -> Optional[Dict[str, str]]:
         """
         Retrieve parameter descriptions for a template from the database.
 
@@ -477,9 +489,16 @@ class DatabaseManager():
 
         Returns:
             dict: A dictionary mapping parameter names to descriptions.
+            None if no parameters found
         """
-        raise NotImplementedError()
-
+        stmt = select(TemplateParameterDBObj).where(TemplateParameterDBObj.template_id == template_id)
+        rows = self.session.scalars(stmt).all()
+        if len(rows) == 0:
+            return None
+        parameters = {}
+        for row in rows:
+            parameters[row.name] = row.description
+        return parameters
 
     def get_templates_by_task_type(self, task_type: TaskType) -> List[TaskTemplate]:
         """
@@ -491,7 +510,73 @@ class DatabaseManager():
         Returns:
             List[TaskTemplate]: A list of templates matching the task type, or an empty list if none found.
         """
+        stmt = select(TemplateDBObj).where(TemplateDBObj.task_type == task_type)
+        try:
+            rows = self.session.scalars(stmt).all()
+            return [self.convert_template_obj(row) for row in rows]
+        except Exception as e:
+            raise ValueError("The following error occured ", e)
+
+    """
+    METHODS FOR WORKING WITH RESOURCES
+    """
+
+    def add_resource_manual(self, resource_str: str, target_words: Set[LexicalItem]) -> Resource:
+        """
+        To be used only when it is known for sure the resource contains
+        target words.
+
+        Args:
+            resource_str (str): The resource string to add to the database.
+            target_words (Set[LexicalItem]): Set of target words contained in the resource.
+
+        Returns:
+            Resource: The added resource object.
+        """
+        resource_obj = ResourceDBObj(resource_text=resource_str)
+        
+        for target_word in target_words:
+            try:
+                word_obj = self.session.scalars(select(WordDBObj).where(WordDBObj.id == target_word.id)).all()
+            except IntegrityError as e:
+                raise ValueDoesNotExistInDB(e)
+            resource_word = ResourceWordDBObj()
+            resource_word.word = word_obj[0]
+            resource_obj.words.append(resource_word)
+        self.session.add(resource_obj)
+        self.session.flush()
+        
+        # create resource object
+        resource = Resource(resource_obj.id, resource_obj.resource_text, list(target_words))
+        self.session.commit()
+        return resource
+    
+    def add_resource_auto(resource_str: str) -> Resource:
+        """
+        Add resource string as a task and try to match it to
+        lemmatized words
+        """
         raise NotImplementedError()
+    
+    def remove_resource(self) -> None:
+        """
+        Removes resource and all associated tasks associated with the resource
+        """
+        pass
+
+    def get_resource_by_id(self, resource_id: int) -> Resource:
+        stmt = select(ResourceDBObj).where(ResourceDBObj.id == resource_id)
+        rows = self.session.scalars(stmt).all()
+        if len(rows) == 0:
+            return None
+        resources = []
+        for row in rows:
+            lexical_items = []
+            for resource_word in row.words:
+                word = resource_word.word
+                lexical_items.append(LexicalItem(word.word, word.pos, word.freq, word.id))
+            resource = Resource(row.id, row.resource_text, lexical_items)
+        return resource
 
 
 

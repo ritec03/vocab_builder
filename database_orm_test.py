@@ -301,7 +301,7 @@ class TestRetrieveUserScores(unittest.TestCase):
         with self.assertRaises(ValueDoesNotExistInDB):
             self.db_manager.retrieve_user_scores(9999)  # Assuming 9999 is an ID that does not exist
 
-class TestAddTemplate(unittest.TestCase):
+class TestTemplates(unittest.TestCase):
     def setUp(self):
         """
         Set up the environment before each test.
@@ -322,6 +322,16 @@ class TestAddTemplate(unittest.TestCase):
             "phrase": "Phrase in target language to be translated into English."
         }
 
+        self.template = TaskTemplate(
+            target_language=self.target_language,
+            starting_language=self.starting_language,
+            template_string=self.template_string,
+            template_description=self.template_description,
+            template_examples=self.template_examples,
+            parameter_description=self.parameter_description,
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+
     def tearDown(self):
         # Close the database session and delete the test database file
         self.db_manager.close()
@@ -329,45 +339,24 @@ class TestAddTemplate(unittest.TestCase):
             os.remove(TEST_DB_FILE)
 
     def test_add_get_template(self):
-        # create template
-        template = TaskTemplate(
-            target_language=self.target_language,
-            starting_language=self.starting_language,
-            template_string=self.template_string,
-            template_description=self.template_description,
-            template_examples=self.template_examples,
-            parameter_description=self.parameter_description,
-            task_type=TaskType.ONE_WAY_TRANSLATION
-        )
-
         # add template
-        template_id = self.db_manager.add_template(template)
+        template_id = self.db_manager.add_template(self.template)
         
         # retrieve and check template
         retrieved_template = self.db_manager.get_template_by_id(template_id)
 
         # check the template
-        self.assertEqual(retrieved_template.starting_language, template.starting_language)
-        self.assertEqual(retrieved_template.target_language, template.target_language)
-        self.assertEqual(retrieved_template.get_template_string(), template.get_template_string())
-        self.assertEqual(retrieved_template.description, template.description)
-        self.assertEqual(retrieved_template.examples, template.examples)
-        self.assertEqual(retrieved_template.parameter_description, template.parameter_description)
-        self.assertEqual(retrieved_template.task_type, template.task_type)
+        self.assertEqual(retrieved_template.starting_language, self.template.starting_language)
+        self.assertEqual(retrieved_template.target_language, self.template.target_language)
+        self.assertEqual(retrieved_template.get_template_string(), self.template.get_template_string())
+        self.assertEqual(retrieved_template.description, self.template.description)
+        self.assertEqual(retrieved_template.examples, self.template.examples)
+        self.assertEqual(retrieved_template.parameter_description, self.template.parameter_description)
+        self.assertEqual(retrieved_template.task_type, self.template.task_type)
 
 
 
     def test_add_template_duplicate_template_string(self):
-        template_1 = TaskTemplate(
-            target_language=self.target_language,
-            starting_language=self.starting_language,
-            template_string=self.template_string,
-            template_description=self.template_description,
-            template_examples=self.template_examples,
-            parameter_description=self.parameter_description,
-            task_type=TaskType.ONE_WAY_TRANSLATION
-        )
-
         template_2 = TaskTemplate(
             target_language=self.target_language + "blah",
             starting_language=self.starting_language + "blah",
@@ -378,12 +367,15 @@ class TestAddTemplate(unittest.TestCase):
             task_type=TaskType.ONE_WAY_TRANSLATION
         )
 
-        self.db_manager.add_template(template_1)
+        self.db_manager.add_template(self.template)
         with self.assertRaises(ValueError):
             self.db_manager.add_template(template_2)
 
-    def test_add_template_incorrect_task_type():
-        pass
+    def test_add_template_incorrect_task_type(self):
+        self.template.task_type = "blah"
+
+        with self.assertRaises(ValueError):
+            self.db_manager.add_template(self.template)
 
     # def test_add_template_repeated_parameter_name(self):
     #     template_2 = TaskTemplate(
@@ -398,9 +390,98 @@ class TestAddTemplate(unittest.TestCase):
     #     with self.assertRaises(ValueError):
     #         self.db_manager.add_template(template_2)
 
-    def test_add_template_examples_not_json():
+    def test_remove_template():
         pass
 
-    def test_add_template_missing_field():
-        pass
+    def test_get_template_parameters(self):
+        template_id = self.db_manager.add_template(self.template)
+        template_params = self.db_manager.get_template_parameters(template_id)
+
+        self.assertEqual(len(list(template_params.keys())), 2)
+        self.assertEqual(set(list(template_params.keys())), set(list(self.template.parameter_description.keys())))
+        keys = list(template_params.keys())
+        self.assertEqual(template_params[keys[0]], self.template.parameter_description[keys[0]])
+        self.assertEqual(template_params[keys[1]], self.template.parameter_description[keys[1]])
+
+    def test_get_template_parameters_no_params(self):
+        self.template.parameter_description = {}
+        template_id = self.db_manager.add_template(self.template)
+        template_params = self.db_manager.get_template_parameters(template_id)
+
+        self.assertEqual(template_params, None)
+
+    def test_get_template_by_task_type(self):
+        templates = self.db_manager.get_templates_by_task_type(self.template.task_type)
+        self.assertEqual(len(templates), 0)
+
+        # TODO add function for equality of tempaltes
+
+        self.db_manager.add_template(self.template)
+        templates_1 = self.db_manager.get_templates_by_task_type(self.template.task_type)
+        self.assertEqual(len(templates_1), 1)
+        self.assertIsInstance(templates_1[0], TaskTemplate)
+
+        template_2 = TaskTemplate(
+            target_language=self.target_language + "blah",
+            starting_language=self.starting_language + "blah",
+            template_string=self.template_string + "blah",
+            template_description=self.template_description + "blah",
+            template_examples=self.template_examples +  ["blah"],
+            parameter_description={**self.parameter_description, **{"blah": "blah"}},
+            task_type=self.template.task_type
+        )
+
+        self.db_manager.add_template(template_2)
+        templates_2 = self.db_manager.get_templates_by_task_type(template_2.task_type)
+        self.assertEqual(len(templates_2), 2)
+        self.assertIsInstance(templates_2[0], TaskTemplate)
+        self.assertIsInstance(templates_2[1], TaskTemplate)
+
+        #try non existent task type
+        with self.assertRaises(ValueError):
+            templates_2 = self.db_manager.get_templates_by_task_type("blah")
+
+class TestResources(unittest.TestCase):
+    def setUp(self):
+        """
+        Set up the environment before each test.
+        """
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+
+        # Insert test data
+        self.user_id = self.db_manager.insert_user("test_user")
+        self.word_ids = self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
+        self.word_1 = self.db_manager.get_word_by_id(1)
+        self.word_2 = self.db_manager.get_word_by_id(2)
+
+    def tearDown(self):
+        # Close the database session and delete the test database file
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_add_get_resource_manual(self):
+        resourse_str = "test resourse"
+        resource = self.db_manager.add_resource_manual(resourse_str, set([self.word_1, self.word_2]))
+
+        retrieved_resource = self.db_manager.get_resource_by_id(resource.resource_id)
+
+        self.assertEqual(retrieved_resource.resource, resource.resource)
+        self.assertEqual(set(retrieved_resource.target_words), set(resource.target_words))
+        self.assertEqual(retrieved_resource.resource_id, resource.resource_id)
+
+    # def test_remove_resource(self):
+    #     pass
+
+
+
     
+
+
+
+    
+
+
+
