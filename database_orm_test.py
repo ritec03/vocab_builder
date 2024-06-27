@@ -377,6 +377,7 @@ class TestTemplates(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.db_manager.add_template(self.template)
 
+    # TODO see how to test that
     # def test_add_template_repeated_parameter_name(self):
     #     template_2 = TaskTemplate(
     #         target_language=self.target_language + "blah",
@@ -472,8 +473,107 @@ class TestResources(unittest.TestCase):
         self.assertEqual(set(retrieved_resource.target_words), set(resource.target_words))
         self.assertEqual(retrieved_resource.resource_id, resource.resource_id)
 
+    def test_resources_by_target_word(self):
+        target_word = self.word_1
+        # add resource
+        resource1 = self.db_manager.add_resource_manual("resourse_str1", set([self.word_1, self.word_2]))
+        resource2 = self.db_manager.add_resource_manual("resourse_str2", set([self.word_2]))
+    
+        retrieved_resources = self.db_manager.get_resources_by_target_word(target_word)
+        self.assertEqual(len(retrieved_resources), 1)
+        self.assertEqual(retrieved_resources[0].resource_id, resource1.resource_id)
+
+    def test_resources_by_target_word_none(self):
+        target_word = self.word_1
+        # add resource
+        resource1 = self.db_manager.add_resource_manual("resourse_str1", set([ self.word_2]))
+        resource2 = self.db_manager.add_resource_manual("resourse_str2", set([self.word_2]))
+    
+        retrieved_resources = self.db_manager.get_resources_by_target_word(target_word)
+        self.assertEqual(len(retrieved_resources), 0)
+
     # def test_remove_resource(self):
     #     pass
+
+class TestTasks(unittest.TestCase):
+    def setUp(self):
+        """
+        Set up the environment before each test.
+        """
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+
+        # Insert test data
+        self.user_id = self.db_manager.insert_user("test_user")
+        self.word_ids = self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
+        self.word_1 = self.db_manager.get_word_by_id(1)
+        self.word_2 = self.db_manager.get_word_by_id(2)
+
+        # add template
+        self.template_string = "test template string"
+        self.template_description = "test description"
+        self.template_examples = ["example 1", "example 2"]
+        self.starting_language = "example language start"
+        self.target_language = "example language target"
+        self.parameter_description = {
+            "sentence": "Sentence in target language to be translated into English.",
+            "phrase": "Phrase in target language to be translated into English."
+        }
+
+        self.template = TaskTemplate(
+            target_language=self.target_language,
+            starting_language=self.starting_language,
+            template_string=self.template_string,
+            template_description=self.template_description,
+            template_examples=self.template_examples,
+            parameter_description=self.parameter_description,
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+        # add test resources
+        self.resource1 = self.db_manager.add_resource_manual("test resource 1", set([self.word_1]))
+        self.resource2 = self.db_manager.add_resource_manual("test resource 2", set([self.word_2]))
+
+
+    def tearDown(self):
+        # Close the database session and delete the test database file
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def test_add_and_get_task(self):
+        """
+        Test adding a task to the database and retrieving it to verify that the addition and retrieval are correct.
+        """
+        template_id = self.db_manager.add_template(self.template)
+        resources = {
+            'sentence': self.resource1,
+            'phrase': self.resource2
+        }
+        target_words = set([self.word_1, self.word_2])
+        answer = "The correct translation"
+        
+        # Add the task to the database
+        task = self.db_manager.add_task(
+            template_id=template_id,
+            resources=resources,
+            target_words=target_words,
+            answer=answer
+        )
+        
+        # Retrieve the task by ID
+        retrieved_task = self.db_manager.get_task_by_id(task.id)
+        
+        # Check that the retrieved task matches the added task
+        self.assertEqual(retrieved_task.id, task.id)
+        self.assertEqual(retrieved_task.template.id, task.template.id)
+        self.assertEqual(retrieved_task.correctAnswer, answer)
+        
+        # Check the resources and target words are correctly associated
+        self.assertEqual(set(retrieved_task.resources.keys()), set(resources.keys()))
+        self.assertEqual(set(lexical_item.id for lexical_item in retrieved_task.learning_items), set(word.id for word in target_words))
+
+
 
 
 

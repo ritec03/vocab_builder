@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Type
 import copy
-from data_structures import EXERCISE_THRESHOLD, FourChoiceAnswer, LexicalItem, Score
+from data_structures import EXERCISE_THRESHOLD, FourChoiceAnswer, LexicalItem, Score, TaskType
 from evaluation_method import AIEvaluation, EvaluationMethod
 from task_template import Resource, TaskTemplate
 
@@ -124,3 +124,11 @@ class FourChoiceTask(Task):
         if user_input not in [a.name for a in list(FourChoiceAnswer)]:
             raise ValueError("User input is not one of four options.")
         return super().evaluate_user_input(user_input)
+    
+def get_task_type_class(task_type: TaskType) -> Type[Task]:
+    if task_type == TaskType.FOUR_CHOICE:
+        return FourChoiceAnswer
+    elif task_type == TaskType.ONE_WAY_TRANSLATION:
+        return OneWayTranslaitonTask
+    else:
+        raise ValueError("Unknown task type ", task_type)

@@ -18,12 +18,11 @@ from data_structures import MAX_USER_NAME_LENGTH, LexicalItem, Resource, Score, 
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-
+from sqlalchemy import TIMESTAMP
 from database import ValueDoesNotExistInDB
-
 from sqlalchemy.engine import Engine
 from sqlalchemy import event
-
+from task import FourChoiceTask, OneWayTranslaitonTask, Task, get_task_type_class
 from task_template import TaskTemplate
 
 @event.listens_for(Engine, "connect")
@@ -83,20 +82,6 @@ class TemplateParameterDBObj(Base):
     template = relationship("TemplateDBObj", back_populates="parameters")
     __table_args__ = (UniqueConstraint("template_id", "name"),)
 
-class TaskDBObj(Base):
-    __tablename__ = "tasks"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    template_id = mapped_column(ForeignKey("templates.id"))
-    answer: Mapped[str]
-
-class TaskTargetWordDBObj(Base):
-    __tablename__ = "task_target_words"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    task_id = mapped_column(Integer, ForeignKey("tasks.id"))
-    word_id = mapped_column(Integer, ForeignKey("words.id"))
-
 class ResourceDBObj(Base):
     __tablename__ = "resources"
 
@@ -115,6 +100,24 @@ class ResourceWordDBObj(Base):
     # each word appears in a resource once only
     __table_args__ = (UniqueConstraint('resource_id', 'word_id'),)
 
+class TaskDBObj(Base):
+    __tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    template_id = mapped_column(ForeignKey("templates.id"))
+    answer: Mapped[str]
+    target_words: Mapped[List["TaskTargetWordDBObj"]] = relationship("TaskTargetWordDBObj")
+    resources: Mapped[List["TaskResourceDBObj"]] = relationship("TaskResourceDBObj")
+    template: Mapped["TemplateDBObj"] = relationship("TemplateDBObj")
+
+class TaskTargetWordDBObj(Base):
+    __tablename__ = "task_target_words"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id = mapped_column(Integer, ForeignKey("tasks.id"))
+    word_id = mapped_column(Integer, ForeignKey("words.id"))
+    word: Mapped["WordDBObj"] = relationship("WordDBObj")
+
 class TaskResourceDBObj(Base):
     __tablename__ = "task_resources"
 
@@ -122,10 +125,10 @@ class TaskResourceDBObj(Base):
     task_id = mapped_column(Integer, ForeignKey("tasks.id"))
     resource_id = mapped_column(Integer, ForeignKey("resources.id"))
     parameter_id = mapped_column(Integer, ForeignKey("template_parameters.id"))
+    resource: Mapped["ResourceDBObj"] = relationship("ResourceDBObj")
+    parameter: Mapped["TemplateParameterDBObj"] = relationship("TemplateParameterDBObj")
     # TODO add constraint not to include parameters that are not parameters for that template
     __table_args__ = (UniqueConstraint("parameter_id", "task_id"),)
-
-from sqlalchemy import TIMESTAMP
 
 class UserLessonDBObj(Base):
     __tablename__ = "user_lessons"
@@ -522,6 +525,7 @@ class DatabaseManager():
     """
 
     def add_resource_manual(self, resource_str: str, target_words: Set[LexicalItem]) -> Resource:
+        # TODO raise error if exact same resource was already added
         """
         To be used only when it is known for sure the resource contains
         target words.
@@ -577,8 +581,132 @@ class DatabaseManager():
                 lexical_items.append(LexicalItem(word.word, word.pos, word.freq, word.id))
             resource = Resource(row.id, row.resource_text, lexical_items)
         return resource
+    
+    def get_resources_by_target_word(self, target_word: LexicalItem) -> List[Resource]:
+        """
+        Gets the list resources that contain the target word.
+        Raises:
+            ValueDoesNotExistInDB error if target word is not in DB.
+        """
+        stmt = select(ResourceDBObj).where(ResourceDBObj.words.any(ResourceWordDBObj.word_id == target_word.id))
+        rows = self.session.scalars(stmt).all()
+        resources = []
+        for row in rows:
+            lexical_items = []
+            for resource_word in row.words:
+                word = resource_word.word
+                lexical_items.append(LexicalItem(word.word, word.pos, word.freq, word.id))
+            resources.append(Resource(row.id, row.resource_text, lexical_items))
+        return resources
+    
+    """
+    METHODS FOR WORKING WITH TASKS
+    """
+    def add_task(
+        self,
+        template_id: int,
+        resources: Dict[str, Resource],
+        target_words: Set[LexicalItem],
+        answer: str
+    ) -> Task:
+        """
+        Adds a new task to the database.
+
+        Args:
+            template_id (int): The ID of the template associated with the task.
+            resources (Dict[str, Resource]): A dictionary of resources with identifiers and resources to fill the template.
+            target_words (Set[LexicalItem]): A set of target words for the task.
+            answer (str): The correct answer for the task.
+
+        Returns:
+            Task: The added task object.
+        """
+        # TODO check that resources contain target words ???
+        try:
+            task_obj = TaskDBObj(template_id=template_id, answer=answer)
+            self.session.add(task_obj)
+            # create task target words
+            for target_word in target_words:
+                task_target_word_obj = TaskTargetWordDBObj(word_id=target_word.id)
+                task_obj.target_words.append(task_target_word_obj)
+            # create task resoruces
+            for param_name in resources:
+                task_resource_obj = TaskResourceDBObj(
+                    resource_id=resources[param_name].resource_id,
+                )
+                # find parameter
+                stmt = select(TemplateParameterDBObj).where(
+                    TemplateParameterDBObj.template_id == template_id,
+                    TemplateParameterDBObj.name == param_name
+                )
+                parameter = self.session.scalars(stmt).first()
+                task_resource_obj.parameter = parameter
+                task_obj.resources.append(task_resource_obj)
+            self.session.flush()
+        except Exception as e:
+            self.session.rollback()
+            raise
+
+        template = self.convert_template_obj(task_obj.template)
+        self.session.commit()
+        # create task object
+        # TODO perhaps create the object first without id to validate it?
+        if template.task_type == TaskType.ONE_WAY_TRANSLATION:
+            task = OneWayTranslaitonTask(
+                template=template, 
+                resources=resources, 
+                learning_items=target_words, 
+                answer=answer, task_id=task_obj.id
+            )
+        elif template.task_type == TaskType.FOUR_CHOICE:
+            task = FourChoiceTask(
+                template=template, 
+                resources=resources, 
+                learning_items=target_words, 
+                answer=answer, 
+                task_id=task_obj.id
+            )
+        else:
+            raise Exception("Unknown task type.")
+        return task
 
 
+    def get_task_by_id(self, task_id: int) -> Task:
+            """
+            Retrieves a task by id along with its associated template, resources,
+            and template parameters, then constructs a Task object.
+            """
+            # Load the task along with its associated template, resources, and target words
+            task_obj = self.session.scalars(select(TaskDBObj).where(TaskDBObj.id == task_id)).first()
+
+            if not task_obj:
+                raise ValueDoesNotExistInDB(f"Task with ID {task_id} does not exist.")
+
+            # Map the TaskDBObj to the corresponding Task class (OneWayTranslaitonTask or FourChoiceTask)
+            template = self.convert_template_obj(task_obj.template)
+            resources = {res.parameter.name: Resource(resource_id=res.resource.id, resource=res.resource.resource_text, target_words=set(res.resource.words)) for res in task_obj.resources}
+            target_words = set([LexicalItem(item=word.word.word, pos=word.word.pos, freq=word.word.freq, id=word.word.id) for word in task_obj.target_words])
+
+            Task_type_class = get_task_type_class(template.task_type)
+
+            task = Task_type_class(
+                template=template,
+                resources=resources,
+                learning_items=target_words,
+                answer=task_obj.answer,
+                task_id=task_obj.id
+            )
+
+            return task
+
+    def get_parameter_name_by_id(self, parameter_id: int) -> str:
+        pass
+
+    def remove_task(task_id: int) -> None:
+        """
+        Removes task from tasks and task_resources tables.
+        """
+        pass
 
 if __name__ == "__main__":
     word_freq_output_file_path = "word_freq.txt"
