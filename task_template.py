@@ -51,6 +51,7 @@ class TaskTemplate():
         self.starting_language = starting_language
         self.target_language = target_language
 
+    # TODO test this behaviour
         try:
             self._template.substitute(self.parameter_description)
         except:

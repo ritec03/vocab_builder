@@ -1,3 +1,4 @@
+import copy
 import json
 from typing import Dict
 import unittest
@@ -9,7 +10,7 @@ from database import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, SCHEMA_PATH, Va
 from database_orm import DatabaseManager, LearningDataDBObj, WordDBObj
 import os
 
-from task import OneWayTranslaitonTask, Task
+from task import OneWayTranslaitonTask, Task, get_task_type_class
 from evaluation import Evaluation, HistoryEntry
 from task_template import TaskTemplate
 
@@ -530,10 +531,39 @@ class TestTasks(unittest.TestCase):
             parameter_description=self.parameter_description,
             task_type=TaskType.ONE_WAY_TRANSLATION
         )
+        self.template_id = self.db_manager.add_template(self.template)
         # add test resources
         self.resource1 = self.db_manager.add_resource_manual("test resource 1", set([self.word_1]))
         self.resource2 = self.db_manager.add_resource_manual("test resource 2", set([self.word_2]))
+        self.resources = {
+            'sentence': self.resource1,
+            'phrase': self.resource2
+        }
 
+        self.template2 = TaskTemplate(
+            target_language=self.target_language,
+            starting_language=self.starting_language,
+            template_string="Which of the following coorectly translates the word \"$target_word\" into English?\n  a. '$A'\n   b. '$B'\n   c. '$C'\n   d. '$D'",
+            template_description="description",
+            template_examples=self.template_examples,
+            parameter_description={
+                "target_word": "Word in the target language to be practiced in this task.",
+                "A": "Option a of the multiple choice question.",
+                "B": "Option b of the multiple choice question.",
+                "C": "Option c of the multiple choice question.",
+                "D": "Option d of the multiple choice question."
+        },
+            task_type=TaskType.FOUR_CHOICE
+        )
+
+        self.four_choice_resources = {
+            "target_word": self.resource1,
+            "A": self.resource2,
+            "B": self.resource2,
+            "C": self.resource2,
+            "D": self.resource2
+        }
+        self.template2_id = self.db_manager.add_template(self.template2)
 
     def tearDown(self):
         # Close the database session and delete the test database file
@@ -545,18 +575,13 @@ class TestTasks(unittest.TestCase):
         """
         Test adding a task to the database and retrieving it to verify that the addition and retrieval are correct.
         """
-        template_id = self.db_manager.add_template(self.template)
-        resources = {
-            'sentence': self.resource1,
-            'phrase': self.resource2
-        }
         target_words = set([self.word_1, self.word_2])
         answer = "The correct translation"
         
         # Add the task to the database
         task = self.db_manager.add_task(
-            template_id=template_id,
-            resources=resources,
+            template_id=self.template_id,
+            resources=self.resources,
             target_words=target_words,
             answer=answer
         )
@@ -570,14 +595,75 @@ class TestTasks(unittest.TestCase):
         self.assertEqual(retrieved_task.correctAnswer, answer)
         
         # Check the resources and target words are correctly associated
-        self.assertEqual(set(retrieved_task.resources.keys()), set(resources.keys()))
+        self.assertEqual(set(retrieved_task.resources.keys()), set(self.resources.keys()))
         self.assertEqual(set(lexical_item.id for lexical_item in retrieved_task.learning_items), set(word.id for word in target_words))
 
+    def test_get_tasks_by_type(self):
+        """
+        Test by adding three tasks with two tasks of same task type and returning those.
+        """
+        self.db_manager.add_task(template_id=self.template2_id, resources=self.four_choice_resources, target_words=set(), answer="A")
+        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words=set(), answer="Answer 2")
+        self.db_manager.add_task(template_id=self.template2_id, resources=self.four_choice_resources, target_words=set(), answer="B")
+
+        # Fetch tasks by type
+        tasks = self.db_manager.get_tasks_by_type(self.template2.task_type)
+        self.assertEqual(len(tasks), 2)  # Two tasks should be of type one
+
+        # Assert
+        for task in tasks:
+            self.assertIsInstance(task, get_task_type_class(self.template2.task_type))
+            self.assertEqual(task.template.task_type, self.template2.task_type)
 
 
+    def test_get_tasks_by_type_no_tasks(self):
+        """
+        Test by adding tasks and returning zero tasks for a non-existent type.
+        """
+        task_type = TaskType.FOUR_CHOICE
+        # Assuming TaskType.FOUR_CHOICE was not used in added tasks or no tasks added
+        tasks = self.db_manager.get_tasks_by_type(task_type)
+        self.assertEqual(len(tasks), 0)  # No tasks should be returned
 
+    def test_get_tasks_by_type_invalid_task_type(self):
+        """
+        Test by trying to get tasks of an invalid task type.
+        """
+        with self.assertRaises(ValueError):
+            self.db_manager.get_tasks_by_type("InvalidType")
 
-    
+    def test_get_tasks_by_template(self):
+        """
+        Test the case when two tasks are returned from a database with three tasks.
+        """
+        # Add multiple tasks with different templates
+
+        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words=set(), answer="Answer 1")
+        self.db_manager.add_task(template_id=self.template2_id, resources=self.four_choice_resources, target_words=set(), answer="A")
+        self.db_manager.add_task(template_id=self.template2_id, resources=self.four_choice_resources, target_words=set(), answer="B")
+
+        # Fetch tasks by the first template
+        tasks = self.db_manager.get_tasks_by_template(self.template2_id)
+        self.assertEqual(len(tasks), 2)  # Two tasks should be from the first template
+
+    def test_get_tasks_by_template_no_tasks(self):
+        """
+        Test the case when no tasks are returned.
+        """
+        another_template = TaskTemplate(
+            target_language="Non-existent language",
+            starting_language="Non-existent start language",
+            template_string="Non-existent template string",
+            template_description="Non-existent description",
+            template_examples=["Non-existent example 1"],
+            parameter_description={"sentence": "Non-existent description."},
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+        another_template_id = self.db_manager.add_template(another_template)
+        tasks = self.db_manager.get_tasks_by_template(another_template_id)
+        self.assertEqual(len(tasks), 0)  # No tasks should be returned
+
+        
 
 
 

@@ -402,6 +402,10 @@ class DatabaseManager():
         result = {score.word_id: Score(word_id=score.word_id, score=score.score) for score in scores}
         return result
     
+    """
+    METHODS FOR WORKING WITH TEMPLATES
+    """
+    
     def convert_template_obj(self, template_obj: TemplateDBObj) -> TaskTemplate:
         parameters = {}
         for param in template_obj.parameters:
@@ -414,7 +418,7 @@ class DatabaseManager():
                 template_description=template_obj.description,
                 template_examples=json.loads(template_obj.examples),
                 parameter_description=parameters,
-                task_type=TaskType.ONE_WAY_TRANSLATION
+                task_type=template_obj.task_type
             )
         return template
 
@@ -651,23 +655,15 @@ class DatabaseManager():
         self.session.commit()
         # create task object
         # TODO perhaps create the object first without id to validate it?
-        if template.task_type == TaskType.ONE_WAY_TRANSLATION:
-            task = OneWayTranslaitonTask(
-                template=template, 
-                resources=resources, 
-                learning_items=target_words, 
-                answer=answer, task_id=task_obj.id
-            )
-        elif template.task_type == TaskType.FOUR_CHOICE:
-            task = FourChoiceTask(
-                template=template, 
-                resources=resources, 
-                learning_items=target_words, 
-                answer=answer, 
-                task_id=task_obj.id
-            )
-        else:
-            raise Exception("Unknown task type.")
+        Task_type_class = get_task_type_class(template.task_type)
+
+        task = Task_type_class(
+            template=template,
+            resources=resources,
+            learning_items=target_words,
+            answer=task_obj.answer,
+            task_id=task_obj.id
+        )
         return task
 
 
@@ -698,11 +694,82 @@ class DatabaseManager():
             )
 
             return task
+    
+    def get_tasks_by_type(self, task_type: TaskType, number:int=100) -> List[Task]:
+        """
+        Return task of the task_type. Returns at most 100 tasks unless otherwise specified.
+        Raise ValueError if invalid task type.
+        """
+        if not isinstance(task_type, TaskType):
+            raise ValueError(f"Invalid task type provided: {task_type}")
 
-    def get_parameter_name_by_id(self, parameter_id: int) -> str:
-        pass
+        # Query for tasks with the specified task type using a JOIN with the Template table
+        tasks_query = self.session.query(TaskDBObj).join(TemplateDBObj).filter(
+            TemplateDBObj.task_type == task_type.name
+        ).limit(number)
 
-    def remove_task(task_id: int) -> None:
+        tasks = tasks_query.all()
+
+        # Convert TaskDBObj to Task instances
+        result_tasks = []
+        for task_obj in tasks:
+            template = self.convert_template_obj(task_obj.template)
+            resources = {res.parameter.name: Resource(resource_id=res.resource.id, resource=res.resource.resource_text, target_words=set(res.resource.words)) for res in task_obj.resources}
+            target_words = set([LexicalItem(item=word.word.word, pos=word.word.pos, freq=word.word.freq, id=word.word.id) for word in task_obj.target_words])
+
+            Task_type_class = get_task_type_class(template.task_type)
+            task = Task_type_class(
+                    template=template, 
+                    resources=resources, 
+                    learning_items=target_words, 
+                    answer=task_obj.answer, 
+                    task_id=task_obj.id
+                )
+
+            result_tasks.append(task)
+
+        return result_tasks
+
+    def get_tasks_by_template(self, template_id: int, number: int = 100) -> List[Task]:
+        """
+        Return tasks that are based on the specified template ID.
+        Returns at most 'number' tasks unless otherwise specified.
+        """
+        # Query for tasks associated with the specified template ID
+        tasks_query = self.session.query(TaskDBObj).filter(
+            TaskDBObj.template_id == template_id
+        ).limit(number)
+
+        tasks = tasks_query.all()
+
+        # Convert TaskDBObj to Task instances
+        result_tasks = []
+        for task_obj in tasks:
+            template = self.convert_template_obj(task_obj.template)
+            resources = {res.parameter.name: Resource(resource_id=res.resource.id, resource=res.resource.resource_text, target_words=set(res.resource.words)) for res in task_obj.resources}
+            target_words = set([LexicalItem(item=word.word.word, pos=word.word.pos, freq=word.word.freq, id=word.word.id) for word in task_obj.target_words])
+
+            Task_type_class = get_task_type_class(template.task_type)
+            task = Task_type_class(
+                    template=template, 
+                    resources=resources, 
+                    learning_items=target_words, 
+                    answer=task_obj.answer, 
+                    task_id=task_obj.id
+                )
+
+            result_tasks.append(task)
+
+        return result_tasks
+
+
+    def get_tasks_for_words(self, target_words: Set[LexicalItem], number:int=100) -> List[Task]:
+        """
+        Return task whose task.target_words is a superset of the target_words.
+        Returns at most 100 tasks unless otherwise specified.
+        """
+
+    def remove_task(self, task_id: int) -> None:
         """
         Removes task from tasks and task_resources tables.
         """
