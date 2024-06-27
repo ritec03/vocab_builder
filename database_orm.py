@@ -762,12 +762,57 @@ class DatabaseManager():
 
         return result_tasks
 
-
-    def get_tasks_for_words(self, target_words: Set[LexicalItem], number:int=100) -> List[Task]:
+    def get_tasks_for_words(self, target_words: Set[LexicalItem], number: int = 100) -> List[Task]:
         """
-        Return task whose task.target_words is a superset of the target_words.
+        Return tasks whose task.target_words is a superset of the target_words.
         Returns at most 100 tasks unless otherwise specified.
         """
+        # Extract IDs from LexicalItem set for comparison
+        target_word_ids = {word.id for word in target_words}
+
+        # Construct a subquery to filter tasks based on word presence
+        task_ids_with_all_words = self.session.query(TaskDBObj.id).join(
+            TaskTargetWordDBObj, TaskDBObj.target_words
+        ).filter(
+            TaskTargetWordDBObj.word_id.in_(target_word_ids)
+        ).group_by(TaskDBObj.id).having(
+            func.count(TaskDBObj.id) == len(target_word_ids)
+        )
+
+        # Now query for tasks where task IDs are in the above subquery results
+        tasks_query = self.session.query(TaskDBObj).filter(
+            TaskDBObj.id.in_(task_ids_with_all_words.subquery())
+        ).limit(number)
+
+        tasks = tasks_query.all()
+
+        # Convert TaskDBObj to Task instances
+        result_tasks = []
+        for task_obj in tasks:
+            template = self.convert_template_obj(task_obj.template)
+            resources = {
+                res.parameter.name: Resource(
+                    resource_id=res.resource.id,
+                    resource=res.resource.resource_text,
+                    target_words=set(res.resource.words)
+                ) for res in task_obj.resources
+            }
+            target_words = set(
+                [LexicalItem(item=word.word.word, pos=word.word.pos, freq=word.word.freq, id=word.word.id) for word in task_obj.target_words]
+            )
+
+            Task_type_class = get_task_type_class(template.task_type)
+            task = Task_type_class(
+                template=template, 
+                resources=resources, 
+                learning_items=target_words, 
+                answer=task_obj.answer, 
+                task_id=task_obj.id
+            )
+
+            result_tasks.append(task)
+
+        return result_tasks
 
     def remove_task(self, task_id: int) -> None:
         """

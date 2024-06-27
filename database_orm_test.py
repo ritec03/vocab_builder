@@ -663,11 +663,53 @@ class TestTasks(unittest.TestCase):
         tasks = self.db_manager.get_tasks_by_template(another_template_id)
         self.assertEqual(len(tasks), 0)  # No tasks should be returned
 
-        
+    def test_get_tasks_for_words(self):
+        """
+        Test retrieving tasks whose target words include all specified words.
+        """
+        target_words_subset = {self.word_1}  # This should match tasks with word_1
+        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words={self.word_1}, answer="Extended")
 
+        additional_word_id = self.db_manager.add_words_to_db([("additional", "noun", 10)])[0]
+        additional_word = self.db_manager.get_word_by_id(additional_word_id)
+        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words={self.word_1, additional_word}, answer="Extended")
 
+        # Test retrieving tasks that must include 'word_1'
+        tasks = self.db_manager.get_tasks_for_words(target_words_subset)
+        self.assertTrue(all(self.word_1 in task.learning_items for task in tasks))
+        self.assertGreaterEqual(len(tasks), 2)  # Should find at least one task
 
-    
+    def test_get_tasks_for_words_no_match(self):
+        """
+        Test retrieving tasks where no tasks contain the specified target words.
+        """
+        word_id = self.db_manager.add_words_to_db([("additional", "noun", 10)])[0]
+        word = self.db_manager.get_word_by_id(word_id)
+        tasks = self.db_manager.get_tasks_for_words({word})
+        self.assertEqual(len(tasks), 0)  # No tasks should match
+
+    def test_get_tasks_for_words_two_words(self):
+        """
+        Test retrieving tasks where there are two target words
+        """
+        two_words_ids = {self.word_1, self.word_2}
+        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words=two_words_ids, answer="Exact Match")
+
+        tasks = self.db_manager.get_tasks_for_words(two_words_ids)
+        self.assertTrue(all(two_words_ids == task.learning_items for task in tasks))
+        self.assertGreaterEqual(len(tasks), 1)  # At least one exact match should exist
+
+    def test_get_tasks_for_words_superset(self):
+        """
+        Test retrieving tasks where the task has only one word out of two required
+        """
+        two_words = {self.word_1, self.word_2}
+        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words={self.word_1}, answer="Superset Match")
+
+        tasks = self.db_manager.get_tasks_for_words(two_words)
+        self.assertGreaterEqual(len(tasks), 0)  # Should find at least one superset match
+
+            
 
 
 
