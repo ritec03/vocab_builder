@@ -122,14 +122,18 @@ class ResourceDBObj(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     resource_text: Mapped[str]
-    words = relationship("ResourceWordDBObj", back_populates="resources")
-
+    words = relationship(
+        "ResourceWordDBObj", 
+        back_populates="resources",
+        passive_deletes=True,
+        cascade="all, delete"
+    )
 
 class ResourceWordDBObj(Base):
     __tablename__ = "resource_words"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    resource_id = mapped_column(Integer, ForeignKey("resources.id"))
+    resource_id = mapped_column(Integer, ForeignKey("resources.id", ondelete="CASCADE"))
     word_id = mapped_column(Integer, ForeignKey("words.id"))
     resources = relationship("ResourceDBObj", back_populates="words")
     word = relationship("WordDBObj", back_populates="resources")
@@ -649,11 +653,24 @@ class DatabaseManager:
         """
         raise NotImplementedError()
 
-    def remove_resource(self) -> None:
+    def remove_resource(self, resource_id) -> None:
         """
-        Removes resource and all associated tasks associated with the resource
+        Removes resource if there are no associated tasks with it.
+        Raise InvalidDelete if there are associated tasks.
         """
-        pass
+        # Retrieve the resource to be deleted
+        resource_to_remove = self.session.get(ResourceDBObj, resource_id)
+        if not resource_to_remove:
+            raise ValueDoesNotExistInDB(f"Resource with ID {resource_id} does not exist.")
+        
+        # check if there are tasks associated with the resource
+        tasks = self.session.scalars(select(TaskResourceDBObj).where(TaskResourceDBObj.resource_id == resource_id)).first()
+        if tasks:
+            raise InvalidDelete("There are tasks associated with this resource.")
+
+        # Delete the resource itself
+        self.session.delete(resource_to_remove)
+        self.session.commit()
 
     def get_resource_by_id(self, resource_id: int) -> Resource:
         stmt = select(ResourceDBObj).where(ResourceDBObj.id == resource_id)

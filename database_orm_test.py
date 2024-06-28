@@ -12,7 +12,7 @@ from database import (
     MIN_SCORE,
     SCHEMA_PATH,
 )
-from database_orm import DatabaseManager, InvalidDelete, LearningDataDBObj, TaskDBObj, TaskResourceDBObj, TaskTargetWordDBObj, UserLessonDBObj, WordDBObj, ValueDoesNotExistInDB
+from database_orm import DatabaseManager, InvalidDelete, LearningDataDBObj, ResourceDBObj, ResourceWordDBObj, TaskDBObj, TaskResourceDBObj, TaskTargetWordDBObj, UserLessonDBObj, WordDBObj, ValueDoesNotExistInDB
 import os
 
 from task import OneWayTranslaitonTask, Task, get_task_type_class
@@ -576,8 +576,60 @@ class TestResources(unittest.TestCase):
         retrieved_resources = self.db_manager.get_resources_by_target_word(target_word)
         self.assertEqual(len(retrieved_resources), 0)
 
-    # def test_remove_resource(self):
-    #     pass
+    def test_remove_resource_no_associated_tasks(self):
+        # add two resources
+        resource1 = self.db_manager.add_resource_manual(
+            "resourse_str1", set([self.word_2])
+        )
+        resource2 = self.db_manager.add_resource_manual(
+            "resourse_str2", set([self.word_2])
+        )
+
+        # remove a resource
+        self.db_manager.remove_resource(resource1.resource_id)
+
+        # check
+        resources = self.db_manager.session.scalars(select(ResourceDBObj)).all()
+        self.assertEqual(len(resources), 1)
+
+        removed_resource = self.db_manager.get_resource_by_id(resource1.resource_id)
+        self.assertEqual(removed_resource, None)
+
+        # assert there are no resource words associated with removed resource
+
+        remaining_resource_words = self.db_manager.session.scalars(
+            select(ResourceWordDBObj).where(ResourceWordDBObj.resource_id == resource1.resource_id)
+        ).all()
+        self.assertEqual(len(remaining_resource_words), 0, "No resource words should remain for the deleted resource")
+
+    def test_remove_resource_with_associated_tasks(self):
+        # add two resources
+        resource1 = self.db_manager.add_resource_manual(
+            "resourse_str1", set([self.word_2])
+        )
+        resource2 = self.db_manager.add_resource_manual(
+            "resourse_str2", set([self.word_2])
+        )
+
+        # associate task with resource 1
+        template = TaskTemplate(
+            target_language=Language.GERMAN,
+            starting_language=Language.ENGLISH,
+            template_string="blah",
+            template_description="blah",
+            template_examples=["eg1"],
+            parameter_description={"sentence": "blah"},
+            task_type=TaskType.ONE_WAY_TRANSLATION,
+        )
+        template_id = self.db_manager.add_template(template)
+        template.id = template_id
+        resources = {"sentence": resource1}
+        self.db_manager.add_task(template_id, resources, {self.word_1}, "answer")
+
+        # remove a resource
+        with self.assertRaises(InvalidDelete):
+            self.db_manager.remove_resource(resource1.resource_id)
+
 
 
 class TestTasks(unittest.TestCase):
