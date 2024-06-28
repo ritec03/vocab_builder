@@ -14,7 +14,7 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy import create_engine
-from data_structures import MAX_USER_NAME_LENGTH, LexicalItem, Resource, Score, TaskType, MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE
+from data_structures import MAX_USER_NAME_LENGTH, Language, LexicalItem, Resource, Score, TaskType, MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -22,6 +22,7 @@ from sqlalchemy import TIMESTAMP
 from database import ValueDoesNotExistInDB
 from sqlalchemy.engine import Engine
 from sqlalchemy import event
+from evaluation import Evaluation, HistoryEntry
 from task import FourChoiceTask, OneWayTranslaitonTask, Task, get_task_type_class
 from task_template import TaskTemplate
 
@@ -68,8 +69,8 @@ class TemplateDBObj(Base):
     template: Mapped[str] = mapped_column(unique=True)
     description: Mapped[str]
     examples: Mapped[str] = mapped_column(JSON) 
-    starting_language: Mapped[str]
-    target_language: Mapped[str]
+    starting_language: Mapped[str] = mapped_column(Enum(Language, validate_strings=True))
+    target_language: Mapped[str] = mapped_column(Enum(Language, validate_strings=True))
     parameters = relationship("TemplateParameterDBObj", back_populates="template")
 
 class TemplateParameterDBObj(Base):
@@ -136,14 +137,15 @@ class UserLessonDBObj(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id = mapped_column(Integer, ForeignKey("users.id"))
     timestamp: Mapped[datetime] = mapped_column(default=func.now(), server_default=func.now(), type_=TIMESTAMP)
+    evaluations: Mapped[List["EvaluationDBObj"]] = relationship("EvaluationDBObj")
 
 class EvaluationDBObj(Base):
     __tablename__ = "evaluations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     lesson_id = mapped_column(Integer, ForeignKey("user_lessons.id"))
-    sequence_number: Mapped[int] = mapped_column()
-    # Ensures sequence numbers are unique within each lesson
+    sequence_number: Mapped[int] = mapped_column() # Ensures sequence numbers are unique within each lesson
+    history_entries: Mapped[List["HistoryEntrieDBObj"]] = relationship("HistoryEntrieDBObj")
     __table_args__ = (UniqueConstraint('lesson_id', 'sequence_number'),)
 
 class HistoryEntrieDBObj(Base):
@@ -154,6 +156,7 @@ class HistoryEntrieDBObj(Base):
     sequence_number: Mapped[int] = mapped_column()
     task_id = mapped_column(Integer, ForeignKey("tasks.id"))
     response: Mapped[str]
+    scores: Mapped[List["EntryScoreDBObj"]] = relationship("EntryScoreDBObj")
     __table_args__ = (UniqueConstraint('evaluation_id', 'sequence_number'),)
 
 class EntryScoreDBObj(Base):
@@ -817,6 +820,88 @@ class DatabaseManager():
     def remove_task(self, task_id: int) -> None:
         """
         Removes task from tasks and task_resources tables.
+        """
+        pass
+
+    def save_user_lesson_data(self, user_id: int, lesson_data: List[Evaluation]) -> None:
+        """
+        Saves user lesson data into the database by saving into user_lessons table,
+        adding the evaluations list in order into evaluations table, and saving each history entry
+        into the history entries in order, with received scores going to entry_scores table
+        Raises ValueDoesNotExistInDB if user does not exist.
+        """
+        if not self.session.get(UserDBObj, user_id):
+            raise ValueDoesNotExistInDB("User does not exist.")
+
+        # Create a new user lesson
+        new_lesson = UserLessonDBObj(user_id=user_id)
+
+        for eval_index, evaluation in enumerate(lesson_data, start=1):
+            new_evaluation = EvaluationDBObj(
+                sequence_number=eval_index
+            )
+
+            for history_index, history_entry in enumerate(evaluation.history, start=1):
+                new_history_entry = HistoryEntrieDBObj(
+                    sequence_number=history_index,
+                    task_id=history_entry.task.id,
+                    response=history_entry.response
+                )
+
+                for score in history_entry.evaluation_result:
+                    new_score = EntryScoreDBObj(
+                        word_id=score.word_id,
+                        score=score.score
+                    )
+                    new_history_entry.scores.append(new_score)
+                new_evaluation.history_entries.append(new_history_entry)
+            new_lesson.evaluations.append(new_evaluation)
+        self.session.add(new_lesson)
+        self.session.flush()
+        lesson_id = new_lesson.id
+        self.session.commit()
+        return lesson_id
+
+    def get_most_recent_lesson_data(self, user_id: int) -> Optional[List[Evaluation]]:
+        """
+        Gets the lesson data for the most recent lesson.
+        Returns None if the user has not completed any lessons.
+        Raises ValueDoesNotExistInDB if user does not exist.
+        """
+        # TODO what about correction field?
+        if not self.session.get(UserDBObj, user_id):
+            raise ValueDoesNotExistInDB("User does not exist.")
+
+        # Get the most recent lesson
+        recent_lesson = self.session.query(UserLessonDBObj)\
+            .filter_by(user_id=user_id)\
+            .order_by(UserLessonDBObj.timestamp.desc())\
+            .first()
+
+        if not recent_lesson:
+            return None
+
+        evaluations = []
+        # TODO need to do it in index order
+        for evaluation_obj in recent_lesson.evaluations:
+            history_entries = []
+            for entry in evaluation_obj.history_entries:
+                scores = set([Score(word_id=score.word_id, score=score.score) for score in entry.scores])
+                task = self.get_task_by_id(entry.task_id)
+                history_entries.append(HistoryEntry(task=task, response=entry.response, evaluation_result=scores))
+
+            evaluation = Evaluation()
+            evaluation.history = history_entries
+            evaluations.append(evaluation)
+
+        return evaluations
+
+    def retrieve_words_for_lesson(self, user_id: int, word_num: int) -> Set[LexicalItem]:
+        """
+        Retrieves word_num words with highest frequency for which the user
+        with user_id does not have scores yet. The words should have pos of either
+        NOUN, ADJ or VERB.
+        Raises ValueDoesNotExistInDB if user does not exist.
         """
         pass
 

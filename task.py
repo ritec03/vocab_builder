@@ -127,7 +127,7 @@ class FourChoiceTask(Task):
     
 def get_task_type_class(task_type: TaskType) -> Type[Task]:
     if task_type == TaskType.FOUR_CHOICE:
-        return FourChoiceAnswer
+        return FourChoiceTask
     elif task_type == TaskType.ONE_WAY_TRANSLATION:
         return OneWayTranslaitonTask
     else:

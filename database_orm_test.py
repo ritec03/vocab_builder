@@ -7,7 +7,7 @@ import sqlite3
 from sqlalchemy import select
 from data_structures import Language, LexicalItem, Resource, Score, TaskType
 from database import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, SCHEMA_PATH, ValueDoesNotExistInDB
-from database_orm import DatabaseManager, LearningDataDBObj, WordDBObj
+from database_orm import DatabaseManager, LearningDataDBObj, UserLessonDBObj, WordDBObj
 import os
 
 from task import OneWayTranslaitonTask, Task, get_task_type_class
@@ -711,5 +711,109 @@ class TestTasks(unittest.TestCase):
 
             
 
+class TestAddTask(unittest.TestCase):
+    def setUp(self):
+        # Initialize the database manager and create the test database
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
 
+        # add user
+        self.user_id = self.db_manager.insert_user("user1")
+
+        # add template
+        # Create a template with two parameters
+        template_string = (
+            "Translate the following into English:\n" +
+            "   '$sentence' and '$phrase'"
+        )
+        template_description = "Description of the template"
+        template_examples = ["Example one", "Example two"]
+        parameter_description = {
+            "sentence": "Sentence in target language to be translated into English.",
+            "phrase": "Phrase in target language to be translated into English."
+        }
+        test_template = TaskTemplate(
+            target_language=Language.GERMAN,
+            starting_language=Language.ENGLISH,
+            template_string=template_string,
+            template_description=template_description,
+            template_examples=template_examples,
+            parameter_description=parameter_description,
+            task_type=TaskType.ONE_WAY_TRANSLATION
+        )
+
+        # Add the template
+        self.added_template_id = self.db_manager.add_template(test_template)
+        # add words 
+        self.word_ids = self.db_manager.add_words_to_db([
+            ("word1", "noun", 10),
+            ("word2", "verb", 8)
+        ])
+        self.words = {LexicalItem("word1", "noun", 10, self.word_ids[0]), LexicalItem("word2", "verb", 8, self.word_ids[1])}
+
+    def tearDown(self):
+        # Close the database connection and remove the test database file
+        self.db_manager.close()
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+
+    def create_example_task(self, resource_string1, resource_string2):
+        answer = 'Sample answer'
+        resource1 = self.db_manager.add_resource_manual(resource_string1, self.words)
+        resource2 = self.db_manager.add_resource_manual(resource_string2, self.words)
+        resources = {
+            'sentence': resource1,
+            'phrase': resource2
+        }
+        task = self.db_manager.add_task(self.added_template_id, resources, self.words, answer)
+        return task
+
+    def test_add_user_lesson_data(self):
+        task1 = self.create_example_task("task1-r1", "task1-r2")
+        task2 = self.create_example_task("task2-r1", "task2-r2")
+        task3 = self.create_example_task("task3-r1", "task3-r2")
+
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(
+            task1,
+            "response1",
+            {Score(1,4)}
+        )
+        evaluation1.add_entry(
+            task2,
+            "response2",
+            {Score(1,6)}
+        )
+        evaluation2 = Evaluation()
+        evaluation2.add_entry(
+            task3,
+            "response3",
+            {Score(1,5), Score(2,7)}
+        )
+
+        lesson_data = [evaluation1, evaluation2]
+
+        self.db_manager.save_user_lesson_data(self.user_id, lesson_data)
+
+        # Validate the insertion of user lesson data
+        # Check user_lessons
+        previous_lesson_data = self.db_manager.get_most_recent_lesson_data(self.user_id)
+        if not previous_lesson_data:
+            self.fail()
+
+        lesson_number = len(self.db_manager.session.scalars(select(UserLessonDBObj).where(UserLessonDBObj.id == self.user_id)).all())
+        self.assertEqual(lesson_number, 1)
+
+        # Check evaluations
+        self.assertEqual(len(previous_lesson_data), len(lesson_data))
+
+        for retrieved_eval, evaluation in zip(previous_lesson_data, lesson_data):
+            self.assertEqual(len(retrieved_eval.history), len(evaluation.history))
+
+            for retr_history, history in zip (retrieved_eval.history, evaluation.history):
+                self.assertEqual(retr_history.response, history.response)
+                self.assertEqual(retr_history.correction, history.correction)
+                self.assertEqual(retr_history.evaluation_result, history.evaluation_result)
+                self.assertEqual(retr_history.task.id, history.task.id)
 

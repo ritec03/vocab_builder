@@ -8,6 +8,7 @@ class HistoryEntry:
     Represents an entry of task, user response, and its evaluation.
     Each history entry can record evaluations for multiple words tested in the task.
     """
+    # TODO add type checks for inputs
     def __init__(self, task: Task, response: str, evaluation_result: Set[Score], correction=None):
         # TODO evaluation result should restrict to one score per word.
         self.task = task
@@ -27,8 +28,8 @@ class Evaluation:
         entry = HistoryEntry(task, response, evaluation_result, correction)
         self.history.append(entry)
 
-    # def get_history(self):
-    #     return self.history
+    def get_history_length(self) -> int:
+        return len(self.history)
     
     def _get_last_history(self) -> HistoryEntry:
         return self.history[0]
