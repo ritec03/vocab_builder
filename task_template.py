@@ -1,18 +1,20 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 from langchain_core.pydantic_v1 import BaseModel, Field, validator
 from string import Template
 from dataclasses import dataclass
-from data_structures import Resource, TaskType
+from data_structures import Resource, TaskType, Language
 
 class TaskTemplate():
     def __init__(
             self,
-            template_id: int, 
-            template_string: str, 
+            target_language: Language,
+            starting_language: Language,
+            template_string: str,
             template_description: str,
             template_examples: List[str],
             parameter_description: Dict[str, str],
-            task_type: TaskType
+            task_type: TaskType,
+            template_id: Optional[int] = None,
         ):
         """
         template id should be a valid int
@@ -22,8 +24,9 @@ class TaskTemplate():
         parameter description should have correct argument number
             and should describe the parameters that go into the template
         """
-        print(task_type)
-        if not isinstance(template_id, int):
+        if not template_id:
+            self.new = True
+        elif not isinstance(template_id, int):
             raise ValueError("Passed id that is not an integer")
         elif not template_string or not isinstance(template_string, str):
             raise ValueError("Template string s empty or not a string.")
@@ -31,18 +34,24 @@ class TaskTemplate():
             raise ValueError("Template description is empty or not a string.")
         elif not isinstance(template_examples, List) or not template_examples:
             raise ValueError("Template examples is empty list or not a list.")
-        elif task_type not in TaskType:
+        elif not isinstance(task_type, TaskType):
             raise ValueError("Unknown task type.")
+        elif not isinstance(target_language, Language):
+            raise ValueError("Unknown target langauge")
+        elif not isinstance(starting_language, Language):
+            raise ValueError("Unknown starting langauge")
 
         self.id = template_id
-        self.template = Template(template_string)
+        self._template = Template(template_string)
         self.description = template_description
         self.examples = template_examples
         self.parameter_description = parameter_description
         self.task_type = task_type
+        self.starting_language = starting_language
+        self.target_language = target_language
 
         try:
-            self.template.substitute(self.parameter_description)
+            self._template.substitute(self.parameter_description)
         except:
             raise ValueError("Parameter description contains wrong parameter number.")
 
@@ -50,13 +59,23 @@ class TaskTemplate():
         #     raise ValueError("Template is not a valid template")
         self.identifiers = [key for key, value in self.parameter_description.items()]
 
+    def get_template_string(self):
+        return self._template.template
+
+    def set_id(self, id: int):
+        if self.new:
+            self.id = id
+            self.new = False
+        else:
+            raise ValueError("The id has already been set.")
+
     def substitute(self, resources: Dict[str, Resource]) -> str:
         """
         Produce filled template string using provided dictionary of resources.
         The produvided dictionary must be compatible with this template.
         """
         resource_strings = {key: resource.resource for key, resource in resources.items()}
-        filled_template = self.template.substitute(resource_strings)
+        filled_template = self._template.substitute(resource_strings)
         return filled_template
     
     def substitute_dummy(self) -> str:
@@ -65,7 +84,7 @@ class TaskTemplate():
         instead of actual resources.
         """
         dummy_resource_strings = {param: '[PLACEHOLDER]' for param in self.parameter_description}
-        filled_template = self.template.substitute(dummy_resource_strings)
+        filled_template = self._template.substitute(dummy_resource_strings)
         return filled_template
     
     def generate_dynamic_class(self) -> type:

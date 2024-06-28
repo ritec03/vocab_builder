@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS templates (
     task_type TEXT NOT NULL,
     template TEXT NOT NULL,
     description TEXT NOT NULL,
-    examples TEXT NOT NULL, -- examples of template usage
+    examples TEXT NOT NULL, -- examples of template usage, store as a json string
+    starting_language TEXT NOT NULL,
+    target_language TEXT NOT NULL,
     UNIQUE (template)
 );
 

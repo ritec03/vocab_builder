@@ -10,7 +10,12 @@ MIN_SCORE = 0
 EXERCISE_THRESHOLD = MAX_SCORE/2
 NUM_WORDS_PER_LESSON = 4
 NUM_NEW_WORDS_PER_LESSON = floor(NUM_WORDS_PER_LESSON/3)
- 
+
+@unique
+class Language(Enum):
+    ENGLISH = 1
+    GERMAN = 2
+
 @unique
 class TaskType(Enum):
     ONE_WAY_TRANSLATION = 1

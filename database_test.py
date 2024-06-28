@@ -1,11 +1,13 @@
 import json
 import unittest
 import sqlite3
-from data_structures import LexicalItem, Resource, Score, TaskType
+from data_structures import Language, LexicalItem, Resource, Score, TaskType
 from database import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, DatabaseManager, SCHEMA_PATH, ValueDoesNotExistInDB
 import os
 
-from task import Evaluation, HistoryEntry, OneWayTranslaitonTask, Task
+from task import OneWayTranslaitonTask, Task
+from evaluation import Evaluation, HistoryEntry
+from task_template import TaskTemplate
 
 # Define a test database file path
 TEST_DB_FILE = "test_database.db"
@@ -345,21 +347,28 @@ class TestAddTemplate(unittest.TestCase):
             "phrase": "Phrase in target language to be translated into English."
         }
 
-        # Add the template
-        added_template = self.db_manager.add_template(
+        test_template = TaskTemplate(
+            target_language=Language.GERMAN,
+            starting_language=Language.ENGLISH,
             template_string=template_string,
             template_description=template_description,
             template_examples=template_examples,
             parameter_description=parameter_description,
             task_type=TaskType.ONE_WAY_TRANSLATION
         )
+        # Add the template
+        added_template = self.db_manager.add_template(test_template)
 
         # Retrieve the template from the database
         retrieved_template = self.db_manager.get_template_by_id(added_template.id)
 
         # Verify that the retrieved template matches the added template
         self.assertIsNotNone(retrieved_template)
-        self.assertEqual(retrieved_template.template.template, template_string)
+        self.assertEqual(retrieved_template.target_language.name, Language.GERMAN.name)
+        self.assertEqual(retrieved_template.starting_language.name, Language.ENGLISH.name)
+        self.assertEqual(retrieved_template.task_type.name, TaskType.ONE_WAY_TRANSLATION.name)
+        self.assertEqual(retrieved_template.get_template_string(), template_string)
+        self.assertEqual(retrieved_template.get_template_string(), template_string)
         self.assertEqual(retrieved_template.description, template_description)
         self.assertEqual(retrieved_template.examples, template_examples)
         self.assertEqual(retrieved_template.parameter_description, parameter_description)
@@ -473,14 +482,18 @@ class TestAddTask(unittest.TestCase):
             "phrase": "Phrase in target language to be translated into English."
         }
 
-        # Add the template
-        added_template = self.db_manager.add_template(
+        test_template = TaskTemplate(
+            target_language=Language.GERMAN,
+            starting_language=Language.ENGLISH,
             template_string=template_string,
             template_description=template_description,
             template_examples=template_examples,
             parameter_description=parameter_description,
             task_type=TaskType.ONE_WAY_TRANSLATION
         )
+
+        # Add the template
+        added_template = self.db_manager.add_template(test_template)
         # add words 
 
         self.db_manager.add_words_to_db([
@@ -547,15 +560,18 @@ class TestAddTask(unittest.TestCase):
             "sentence": "Sentence in target language to be translated into English.",
             "phrase": "Phrase in target language to be translated into English."
         }
-
-        # Add the template
-        self.added_template = self.db_manager.add_template(
+        test_template = TaskTemplate(
+            target_language=Language.GERMAN,
+            starting_language=Language.ENGLISH,
             template_string=template_string,
             template_description=template_description,
             template_examples=template_examples,
             parameter_description=parameter_description,
             task_type=TaskType.ONE_WAY_TRANSLATION
         )
+
+        # Add the template
+        self.added_template = self.db_manager.add_template(test_template)
         # add words 
         self.db_manager.add_words_to_db([
             ("word1", "noun", 10),
