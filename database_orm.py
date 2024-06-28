@@ -1,4 +1,3 @@
-
 from datetime import datetime
 import json
 from typing import Dict, List, Optional, Set, Tuple
@@ -14,7 +13,17 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy import create_engine
-from data_structures import MAX_USER_NAME_LENGTH, Language, LexicalItem, Resource, Score, TaskType, MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE
+from data_structures import (
+    MAX_USER_NAME_LENGTH,
+    Language,
+    LexicalItem,
+    Resource,
+    Score,
+    TaskType,
+    MAX_SCORE,
+    MAX_USER_NAME_LENGTH,
+    MIN_SCORE,
+)
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -26,14 +35,17 @@ from evaluation import Evaluation, HistoryEntry
 from task import FourChoiceTask, OneWayTranslaitonTask, Task, get_task_type_class
 from task_template import TaskTemplate
 
+
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
+
 class Base(DeclarativeBase):
     pass
+
 
 class UserDBObj(Base):
     __tablename__ = "users"
@@ -41,6 +53,7 @@ class UserDBObj(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_name: Mapped[str] = mapped_column(unique=True)
     # create_date: Mapped[datetime] = mapped_column(insert_default=func.now())
+
 
 class WordDBObj(Base):
     __tablename__ = "words"
@@ -50,7 +63,8 @@ class WordDBObj(Base):
     pos: Mapped[str]
     freq: Mapped[int]
     resources = relationship("ResourceWordDBObj", back_populates="word")
-    __table_args__ = (UniqueConstraint('word', 'pos'),)
+    __table_args__ = (UniqueConstraint("word", "pos"),)
+
 
 class LearningDataDBObj(Base):
     __tablename__ = "learning_data"
@@ -58,7 +72,10 @@ class LearningDataDBObj(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id = mapped_column(ForeignKey("users.id"))
     word_id = mapped_column(ForeignKey("words.id"))
-    score: Mapped[int] = mapped_column(Integer, CheckConstraint("score >= 0 AND score <= 10"), unique=False)
+    score: Mapped[int] = mapped_column(
+        Integer, CheckConstraint("score >= 0 AND score <= 10"), unique=False
+    )
+
 
 class TemplateDBObj(Base):
     __tablename__ = "templates"
@@ -68,10 +85,13 @@ class TemplateDBObj(Base):
     task_type: Mapped[str] = mapped_column(Enum(TaskType, validate_strings=True))
     template: Mapped[str] = mapped_column(unique=True)
     description: Mapped[str]
-    examples: Mapped[str] = mapped_column(JSON) 
-    starting_language: Mapped[str] = mapped_column(Enum(Language, validate_strings=True))
+    examples: Mapped[str] = mapped_column(JSON)
+    starting_language: Mapped[str] = mapped_column(
+        Enum(Language, validate_strings=True)
+    )
     target_language: Mapped[str] = mapped_column(Enum(Language, validate_strings=True))
     parameters = relationship("TemplateParameterDBObj", back_populates="template")
+
 
 class TemplateParameterDBObj(Base):
     __tablename__ = "template_parameters"
@@ -83,12 +103,14 @@ class TemplateParameterDBObj(Base):
     template = relationship("TemplateDBObj", back_populates="parameters")
     __table_args__ = (UniqueConstraint("template_id", "name"),)
 
+
 class ResourceDBObj(Base):
     __tablename__ = "resources"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     resource_text: Mapped[str]
     words = relationship("ResourceWordDBObj", back_populates="resources")
+
 
 class ResourceWordDBObj(Base):
     __tablename__ = "resource_words"
@@ -99,7 +121,8 @@ class ResourceWordDBObj(Base):
     resources = relationship("ResourceDBObj", back_populates="words")
     word = relationship("WordDBObj", back_populates="resources")
     # each word appears in a resource once only
-    __table_args__ = (UniqueConstraint('resource_id', 'word_id'),)
+    __table_args__ = (UniqueConstraint("resource_id", "word_id"),)
+
 
 class TaskDBObj(Base):
     __tablename__ = "tasks"
@@ -107,9 +130,12 @@ class TaskDBObj(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     template_id = mapped_column(ForeignKey("templates.id"))
     answer: Mapped[str]
-    target_words: Mapped[List["TaskTargetWordDBObj"]] = relationship("TaskTargetWordDBObj")
+    target_words: Mapped[List["TaskTargetWordDBObj"]] = relationship(
+        "TaskTargetWordDBObj"
+    )
     resources: Mapped[List["TaskResourceDBObj"]] = relationship("TaskResourceDBObj")
     template: Mapped["TemplateDBObj"] = relationship("TemplateDBObj")
+
 
 class TaskTargetWordDBObj(Base):
     __tablename__ = "task_target_words"
@@ -118,6 +144,7 @@ class TaskTargetWordDBObj(Base):
     task_id = mapped_column(Integer, ForeignKey("tasks.id"))
     word_id = mapped_column(Integer, ForeignKey("words.id"))
     word: Mapped["WordDBObj"] = relationship("WordDBObj")
+
 
 class TaskResourceDBObj(Base):
     __tablename__ = "task_resources"
@@ -131,22 +158,31 @@ class TaskResourceDBObj(Base):
     # TODO add constraint not to include parameters that are not parameters for that template
     __table_args__ = (UniqueConstraint("parameter_id", "task_id"),)
 
+
 class UserLessonDBObj(Base):
     __tablename__ = "user_lessons"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id = mapped_column(Integer, ForeignKey("users.id"))
-    timestamp: Mapped[datetime] = mapped_column(default=func.now(), server_default=func.now(), type_=TIMESTAMP)
+    timestamp: Mapped[datetime] = mapped_column(
+        default=func.now(), server_default=func.now(), type_=TIMESTAMP
+    )
     evaluations: Mapped[List["EvaluationDBObj"]] = relationship("EvaluationDBObj")
+
 
 class EvaluationDBObj(Base):
     __tablename__ = "evaluations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     lesson_id = mapped_column(Integer, ForeignKey("user_lessons.id"))
-    sequence_number: Mapped[int] = mapped_column() # Ensures sequence numbers are unique within each lesson
-    history_entries: Mapped[List["HistoryEntrieDBObj"]] = relationship("HistoryEntrieDBObj")
-    __table_args__ = (UniqueConstraint('lesson_id', 'sequence_number'),)
+    sequence_number: Mapped[int] = (
+        mapped_column()
+    )  # Ensures sequence numbers are unique within each lesson
+    history_entries: Mapped[List["HistoryEntrieDBObj"]] = relationship(
+        "HistoryEntrieDBObj"
+    )
+    __table_args__ = (UniqueConstraint("lesson_id", "sequence_number"),)
+
 
 class HistoryEntrieDBObj(Base):
     __tablename__ = "history_entries"
@@ -157,7 +193,8 @@ class HistoryEntrieDBObj(Base):
     task_id = mapped_column(Integer, ForeignKey("tasks.id"))
     response: Mapped[str]
     scores: Mapped[List["EntryScoreDBObj"]] = relationship("EntryScoreDBObj")
-    __table_args__ = (UniqueConstraint('evaluation_id', 'sequence_number'),)
+    __table_args__ = (UniqueConstraint("evaluation_id", "sequence_number"),)
+
 
 class EntryScoreDBObj(Base):
     __tablename__ = "entry_scores"
@@ -165,16 +202,19 @@ class EntryScoreDBObj(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     history_entry_id = mapped_column(Integer, ForeignKey("history_entries.id"))
     word_id = mapped_column(Integer, ForeignKey("words.id"))
-    score: Mapped[int] = mapped_column(Integer, CheckConstraint("score >= 0 AND score <= 10"))
+    score: Mapped[int] = mapped_column(
+        Integer, CheckConstraint("score >= 0 AND score <= 10")
+    )
     # Ensuring one score per word per history entry
-    __table_args__ = (UniqueConstraint('history_entry_id', 'word_id'),)
+    __table_args__ = (UniqueConstraint("history_entry_id", "word_id"),)
 
-class DatabaseManager():
+
+class DatabaseManager:
     def __init__(self, db_path: str):
         engine = create_engine("sqlite:///" + db_path, echo=True)
         Base.metadata.create_all(engine)
         self.session = Session(engine)
-        
+
     def close(self):
         self.session.close()
 
@@ -211,17 +251,19 @@ class DatabaseManager():
                     word.freq = freq
                     self.session.flush()
                     word_ids.append(word.id)
-            
+
         self.session.commit()
         return word_ids
-    
+
     def get_word_pos(self, word: str, pos: str) -> Optional[WordDBObj]:
         """
         WordDBObj with word and pos that is in DB or None.
         Raise:
             ValueError if more than one word-pos entry is found.
         """
-        stmt = select(WordDBObj).where(and_(WordDBObj.word == word, WordDBObj.pos == pos))
+        stmt = select(WordDBObj).where(
+            and_(WordDBObj.word == word, WordDBObj.pos == pos)
+        )
         rows = self.session.scalars(stmt).all()
         if len(rows) == 0:
             return None
@@ -230,7 +272,6 @@ class DatabaseManager():
             return word
         else:
             raise ValueError(f"More than one word-pos {word}-{pos} entry found.")
-
 
     def get_word_by_id(self, word_id: int) -> Optional[LexicalItem]:
         """
@@ -246,7 +287,7 @@ class DatabaseManager():
             return LexicalItem(word.word, word.pos, word.freq, word.id)
         else:
             return None
-        
+
     def insert_user(self, user_name: str) -> int:
         """
         Insert a new user into the users table and return the user ID.
@@ -263,7 +304,7 @@ class DatabaseManager():
         """
         if not isinstance(user_name, str) or len(user_name) > MAX_USER_NAME_LENGTH:
             raise ValueError("Username is not a string or too long.")
-        
+
         try:
             user = UserDBObj(user_name=user_name)
             self.session.add(user)
@@ -282,7 +323,7 @@ class DatabaseManager():
         Raises?
 
         Returns:
-            UserDBObj: user database object 
+            UserDBObj: user database object
             None if no user is found
         """
         statement = select(UserDBObj).where(UserDBObj.id == user_id)
@@ -294,7 +335,7 @@ class DatabaseManager():
             return word
         else:
             raise KeyError(f"User id {user_id} is not unique.")
-    
+
     def remove_user(self, user_id: int) -> None:
         """
         # TODO also delete data from the lesson data table ???
@@ -303,7 +344,7 @@ class DatabaseManager():
 
         Args:
             user_id (int): ID of the user to remove.
-        
+
         Raises:
             ValueDoesNotExistInDB if the user with user_id does not exist
         """
@@ -318,27 +359,34 @@ class DatabaseManager():
 
     def add_word_score(self, user_id: int, score: Score):
         """
-            Adds or updates a row in learning_data for the user with user_id
-            for word_id with the given score. Score should be between MIN_SCORE and MAX_SCORE.
-            If a score for the word already exists for the user, it is updated.
+        Adds or updates a row in learning_data for the user with user_id
+        for word_id with the given score. Score should be between MIN_SCORE and MAX_SCORE.
+        If a score for the word already exists for the user, it is updated.
 
-            Args:
-                user_id (int): ID of the user.
-                word_id (int): ID of the word.
-                score (int): Score to add (MIN_SCORE and MAX_SCORE).
+        Args:
+            user_id (int): ID of the user.
+            word_id (int): ID of the word.
+            score (int): Score to add (MIN_SCORE and MAX_SCORE).
         """
         if not MIN_SCORE <= score.score <= MAX_SCORE:
             raise ValueError(f"Score should be between {MIN_SCORE} and {MAX_SCORE}.")
 
         # Check if score exists, update if yes, else create new
         entry = self.session.execute(
-            select(LearningDataDBObj).where(and_(LearningDataDBObj.user_id == user_id, LearningDataDBObj.word_id == score.word_id))
+            select(LearningDataDBObj).where(
+                and_(
+                    LearningDataDBObj.user_id == user_id,
+                    LearningDataDBObj.word_id == score.word_id,
+                )
+            )
         ).scalar()
         if entry:
             entry.score = score.score
         else:
             try:
-                new_entry = LearningDataDBObj(user_id=user_id, word_id=score.word_id, score=score.score)
+                new_entry = LearningDataDBObj(
+                    user_id=user_id, word_id=score.word_id, score=score.score
+                )
                 self.session.add(new_entry)
                 self.session.flush()
             except IntegrityError:
@@ -347,10 +395,13 @@ class DatabaseManager():
 
     def get_score(self, user_id, word_id):
         entry = self.session.execute(
-            select(LearningDataDBObj).where(LearningDataDBObj.user_id == user_id, LearningDataDBObj.word_id == word_id)
+            select(LearningDataDBObj).where(
+                LearningDataDBObj.user_id == user_id,
+                LearningDataDBObj.word_id == word_id,
+            )
         ).scalar()
         return entry.score if entry else None
-        
+
     def update_user_scores(self, user_id: int, lesson_scores: Set[Score]) -> None:
         """
         Update user scores for the lesson scores which is a list of scores
@@ -375,18 +426,20 @@ class DatabaseManager():
             existing_score = self.session.execute(
                 select(LearningDataDBObj).where(
                     LearningDataDBObj.user_id == user_id,
-                    LearningDataDBObj.word_id == score.word_id
+                    LearningDataDBObj.word_id == score.word_id,
                 )
             ).scalar()
-            
+
             if existing_score:
                 existing_score.score = score.score
             else:
-                new_score = LearningDataDBObj(user_id=user_id, word_id=score.word_id, score=score.score)
+                new_score = LearningDataDBObj(
+                    user_id=user_id, word_id=score.word_id, score=score.score
+                )
                 self.session.add(new_score)
-        
+
         self.session.commit()
-    
+
     def retrieve_user_scores(self, user_id: int) -> Dict[int, Score]:
         """
         Retrieves word score data of a user from the learning_data table
@@ -398,49 +451,51 @@ class DatabaseManager():
             raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
 
         # Query to fetch all scores for the user
-        scores_query = select(LearningDataDBObj).where(LearningDataDBObj.user_id == user_id)
+        scores_query = select(LearningDataDBObj).where(
+            LearningDataDBObj.user_id == user_id
+        )
         scores = self.session.execute(scores_query).scalars().all()
 
         # Convert the ORM objects to Score dataclass instances
-        result = {score.word_id: Score(word_id=score.word_id, score=score.score) for score in scores}
+        result = {
+            score.word_id: Score(word_id=score.word_id, score=score.score)
+            for score in scores
+        }
         return result
-    
+
     """
     METHODS FOR WORKING WITH TEMPLATES
     """
-    
+
     def convert_template_obj(self, template_obj: TemplateDBObj) -> TaskTemplate:
         parameters = {}
         for param in template_obj.parameters:
             parameters[param.name] = param.description
 
         template = TaskTemplate(
-                target_language=template_obj.target_language,
-                starting_language=template_obj.starting_language,
-                template_string=template_obj.template,
-                template_description=template_obj.description,
-                template_examples=json.loads(template_obj.examples),
-                parameter_description=parameters,
-                task_type=template_obj.task_type
-            )
+            target_language=template_obj.target_language,
+            starting_language=template_obj.starting_language,
+            template_string=template_obj.template,
+            template_description=template_obj.description,
+            template_examples=json.loads(template_obj.examples),
+            parameter_description=parameters,
+            task_type=template_obj.task_type,
+        )
         return template
 
-    def add_template(
-            self,
-            template: TaskTemplate
-        ) -> int:
+    def add_template(self, template: TaskTemplate) -> int:
         """
         Adds template to database and returns the new template id.
         If a template with the same template_string exist, return value error.
         """
         template_obj = TemplateDBObj(
-                task_type=template.task_type,
-                template=template.get_template_string(),
-                description=template.description,
-                examples=json.dumps(template.examples),
-                starting_language=template.starting_language,
-                target_language=template.target_language,
-            )
+            task_type=template.task_type,
+            template=template.get_template_string(),
+            description=template.description,
+            examples=json.dumps(template.examples),
+            starting_language=template.starting_language,
+            target_language=template.target_language,
+        )
         self.session.add(template_obj)
         for param_key in template.parameter_description:
             param_obj = TemplateParameterDBObj(
@@ -453,13 +508,12 @@ class DatabaseManager():
             except IntegrityError as e:
                 self.session.rollback()
                 raise ValueError("the following error occured: ", e)
-            except Exception as e: # TODO change error handling
+            except Exception as e:  # TODO change error handling
                 self.session.rollback()
                 raise ValueError("the following error occured: ", e)
         template_id = template_obj.id
         self.session.commit()
         return template_id
-
 
     def remove_template(template_name: str) -> None:
         """
@@ -489,7 +543,6 @@ class DatabaseManager():
         else:
             raise KeyError(f"User id {template_id} is not unique.")
 
-    
     def get_template_parameters(self, template_id: int) -> Optional[Dict[str, str]]:
         """
         Retrieve parameter descriptions for a template from the database.
@@ -501,7 +554,9 @@ class DatabaseManager():
             dict: A dictionary mapping parameter names to descriptions.
             None if no parameters found
         """
-        stmt = select(TemplateParameterDBObj).where(TemplateParameterDBObj.template_id == template_id)
+        stmt = select(TemplateParameterDBObj).where(
+            TemplateParameterDBObj.template_id == template_id
+        )
         rows = self.session.scalars(stmt).all()
         if len(rows) == 0:
             return None
@@ -531,7 +586,9 @@ class DatabaseManager():
     METHODS FOR WORKING WITH RESOURCES
     """
 
-    def add_resource_manual(self, resource_str: str, target_words: Set[LexicalItem]) -> Resource:
+    def add_resource_manual(
+        self, resource_str: str, target_words: Set[LexicalItem]
+    ) -> Resource:
         # TODO raise error if exact same resource was already added
         """
         To be used only when it is known for sure the resource contains
@@ -545,10 +602,12 @@ class DatabaseManager():
             Resource: The added resource object.
         """
         resource_obj = ResourceDBObj(resource_text=resource_str)
-        
+
         for target_word in target_words:
             try:
-                word_obj = self.session.scalars(select(WordDBObj).where(WordDBObj.id == target_word.id)).all()
+                word_obj = self.session.scalars(
+                    select(WordDBObj).where(WordDBObj.id == target_word.id)
+                ).all()
             except IntegrityError as e:
                 raise ValueDoesNotExistInDB(e)
             resource_word = ResourceWordDBObj()
@@ -556,19 +615,21 @@ class DatabaseManager():
             resource_obj.words.append(resource_word)
         self.session.add(resource_obj)
         self.session.flush()
-        
+
         # create resource object
-        resource = Resource(resource_obj.id, resource_obj.resource_text, list(target_words))
+        resource = Resource(
+            resource_obj.id, resource_obj.resource_text, list(target_words)
+        )
         self.session.commit()
         return resource
-    
+
     def add_resource_auto(resource_str: str) -> Resource:
         """
         Add resource string as a task and try to match it to
         lemmatized words
         """
         raise NotImplementedError()
-    
+
     def remove_resource(self) -> None:
         """
         Removes resource and all associated tasks associated with the resource
@@ -585,36 +646,43 @@ class DatabaseManager():
             lexical_items = []
             for resource_word in row.words:
                 word = resource_word.word
-                lexical_items.append(LexicalItem(word.word, word.pos, word.freq, word.id))
+                lexical_items.append(
+                    LexicalItem(word.word, word.pos, word.freq, word.id)
+                )
             resource = Resource(row.id, row.resource_text, lexical_items)
         return resource
-    
+
     def get_resources_by_target_word(self, target_word: LexicalItem) -> List[Resource]:
         """
         Gets the list resources that contain the target word.
         Raises:
             ValueDoesNotExistInDB error if target word is not in DB.
         """
-        stmt = select(ResourceDBObj).where(ResourceDBObj.words.any(ResourceWordDBObj.word_id == target_word.id))
+        stmt = select(ResourceDBObj).where(
+            ResourceDBObj.words.any(ResourceWordDBObj.word_id == target_word.id)
+        )
         rows = self.session.scalars(stmt).all()
         resources = []
         for row in rows:
             lexical_items = []
             for resource_word in row.words:
                 word = resource_word.word
-                lexical_items.append(LexicalItem(word.word, word.pos, word.freq, word.id))
+                lexical_items.append(
+                    LexicalItem(word.word, word.pos, word.freq, word.id)
+                )
             resources.append(Resource(row.id, row.resource_text, lexical_items))
         return resources
-    
+
     """
     METHODS FOR WORKING WITH TASKS
     """
+
     def add_task(
         self,
         template_id: int,
         resources: Dict[str, Resource],
         target_words: Set[LexicalItem],
-        answer: str
+        answer: str,
     ) -> Task:
         """
         Adds a new task to the database.
@@ -644,7 +712,7 @@ class DatabaseManager():
                 # find parameter
                 stmt = select(TemplateParameterDBObj).where(
                     TemplateParameterDBObj.template_id == template_id,
-                    TemplateParameterDBObj.name == param_name
+                    TemplateParameterDBObj.name == param_name,
                 )
                 parameter = self.session.scalars(stmt).first()
                 task_resource_obj.parameter = parameter
@@ -665,40 +733,58 @@ class DatabaseManager():
             resources=resources,
             learning_items=target_words,
             answer=task_obj.answer,
-            task_id=task_obj.id
+            task_id=task_obj.id,
         )
         return task
 
-
     def get_task_by_id(self, task_id: int) -> Task:
-            """
-            Retrieves a task by id along with its associated template, resources,
-            and template parameters, then constructs a Task object.
-            """
-            # Load the task along with its associated template, resources, and target words
-            task_obj = self.session.scalars(select(TaskDBObj).where(TaskDBObj.id == task_id)).first()
+        """
+        Retrieves a task by id along with its associated template, resources,
+        and template parameters, then constructs a Task object.
+        """
+        # Load the task along with its associated template, resources, and target words
+        task_obj = self.session.scalars(
+            select(TaskDBObj).where(TaskDBObj.id == task_id)
+        ).first()
 
-            if not task_obj:
-                raise ValueDoesNotExistInDB(f"Task with ID {task_id} does not exist.")
+        if not task_obj:
+            raise ValueDoesNotExistInDB(f"Task with ID {task_id} does not exist.")
 
-            # Map the TaskDBObj to the corresponding Task class (OneWayTranslaitonTask or FourChoiceTask)
-            template = self.convert_template_obj(task_obj.template)
-            resources = {res.parameter.name: Resource(resource_id=res.resource.id, resource=res.resource.resource_text, target_words=set(res.resource.words)) for res in task_obj.resources}
-            target_words = set([LexicalItem(item=word.word.word, pos=word.word.pos, freq=word.word.freq, id=word.word.id) for word in task_obj.target_words])
-
-            Task_type_class = get_task_type_class(template.task_type)
-
-            task = Task_type_class(
-                template=template,
-                resources=resources,
-                learning_items=target_words,
-                answer=task_obj.answer,
-                task_id=task_obj.id
+        # Map the TaskDBObj to the corresponding Task class (OneWayTranslaitonTask or FourChoiceTask)
+        template = self.convert_template_obj(task_obj.template)
+        resources = {
+            res.parameter.name: Resource(
+                resource_id=res.resource.id,
+                resource=res.resource.resource_text,
+                target_words=set(res.resource.words),
             )
+            for res in task_obj.resources
+        }
+        target_words = set(
+            [
+                LexicalItem(
+                    item=word.word.word,
+                    pos=word.word.pos,
+                    freq=word.word.freq,
+                    id=word.word.id,
+                )
+                for word in task_obj.target_words
+            ]
+        )
 
-            return task
-    
-    def get_tasks_by_type(self, task_type: TaskType, number:int=100) -> List[Task]:
+        Task_type_class = get_task_type_class(template.task_type)
+
+        task = Task_type_class(
+            template=template,
+            resources=resources,
+            learning_items=target_words,
+            answer=task_obj.answer,
+            task_id=task_obj.id,
+        )
+
+        return task
+
+    def get_tasks_by_type(self, task_type: TaskType, number: int = 100) -> List[Task]:
         """
         Return task of the task_type. Returns at most 100 tasks unless otherwise specified.
         Raise ValueError if invalid task type.
@@ -707,85 +793,12 @@ class DatabaseManager():
             raise ValueError(f"Invalid task type provided: {task_type}")
 
         # Query for tasks with the specified task type using a JOIN with the Template table
-        tasks_query = self.session.query(TaskDBObj).join(TemplateDBObj).filter(
-            TemplateDBObj.task_type == task_type.name
-        ).limit(number)
-
-        tasks = tasks_query.all()
-
-        # Convert TaskDBObj to Task instances
-        result_tasks = []
-        for task_obj in tasks:
-            template = self.convert_template_obj(task_obj.template)
-            resources = {res.parameter.name: Resource(resource_id=res.resource.id, resource=res.resource.resource_text, target_words=set(res.resource.words)) for res in task_obj.resources}
-            target_words = set([LexicalItem(item=word.word.word, pos=word.word.pos, freq=word.word.freq, id=word.word.id) for word in task_obj.target_words])
-
-            Task_type_class = get_task_type_class(template.task_type)
-            task = Task_type_class(
-                    template=template, 
-                    resources=resources, 
-                    learning_items=target_words, 
-                    answer=task_obj.answer, 
-                    task_id=task_obj.id
-                )
-
-            result_tasks.append(task)
-
-        return result_tasks
-
-    def get_tasks_by_template(self, template_id: int, number: int = 100) -> List[Task]:
-        """
-        Return tasks that are based on the specified template ID.
-        Returns at most 'number' tasks unless otherwise specified.
-        """
-        # Query for tasks associated with the specified template ID
-        tasks_query = self.session.query(TaskDBObj).filter(
-            TaskDBObj.template_id == template_id
-        ).limit(number)
-
-        tasks = tasks_query.all()
-
-        # Convert TaskDBObj to Task instances
-        result_tasks = []
-        for task_obj in tasks:
-            template = self.convert_template_obj(task_obj.template)
-            resources = {res.parameter.name: Resource(resource_id=res.resource.id, resource=res.resource.resource_text, target_words=set(res.resource.words)) for res in task_obj.resources}
-            target_words = set([LexicalItem(item=word.word.word, pos=word.word.pos, freq=word.word.freq, id=word.word.id) for word in task_obj.target_words])
-
-            Task_type_class = get_task_type_class(template.task_type)
-            task = Task_type_class(
-                    template=template, 
-                    resources=resources, 
-                    learning_items=target_words, 
-                    answer=task_obj.answer, 
-                    task_id=task_obj.id
-                )
-
-            result_tasks.append(task)
-
-        return result_tasks
-
-    def get_tasks_for_words(self, target_words: Set[LexicalItem], number: int = 100) -> List[Task]:
-        """
-        Return tasks whose task.target_words is a superset of the target_words.
-        Returns at most 100 tasks unless otherwise specified.
-        """
-        # Extract IDs from LexicalItem set for comparison
-        target_word_ids = {word.id for word in target_words}
-
-        # Construct a subquery to filter tasks based on word presence
-        task_ids_with_all_words = self.session.query(TaskDBObj.id).join(
-            TaskTargetWordDBObj, TaskDBObj.target_words
-        ).filter(
-            TaskTargetWordDBObj.word_id.in_(target_word_ids)
-        ).group_by(TaskDBObj.id).having(
-            func.count(TaskDBObj.id) == len(target_word_ids)
+        tasks_query = (
+            self.session.query(TaskDBObj)
+            .join(TemplateDBObj)
+            .filter(TemplateDBObj.task_type == task_type.name)
+            .limit(number)
         )
-
-        # Now query for tasks where task IDs are in the above subquery results
-        tasks_query = self.session.query(TaskDBObj).filter(
-            TaskDBObj.id.in_(task_ids_with_all_words.subquery())
-        ).limit(number)
 
         tasks = tasks_query.all()
 
@@ -797,20 +810,145 @@ class DatabaseManager():
                 res.parameter.name: Resource(
                     resource_id=res.resource.id,
                     resource=res.resource.resource_text,
-                    target_words=set(res.resource.words)
-                ) for res in task_obj.resources
+                    target_words=set(res.resource.words),
+                )
+                for res in task_obj.resources
             }
             target_words = set(
-                [LexicalItem(item=word.word.word, pos=word.word.pos, freq=word.word.freq, id=word.word.id) for word in task_obj.target_words]
+                [
+                    LexicalItem(
+                        item=word.word.word,
+                        pos=word.word.pos,
+                        freq=word.word.freq,
+                        id=word.word.id,
+                    )
+                    for word in task_obj.target_words
+                ]
             )
 
             Task_type_class = get_task_type_class(template.task_type)
             task = Task_type_class(
-                template=template, 
-                resources=resources, 
-                learning_items=target_words, 
-                answer=task_obj.answer, 
-                task_id=task_obj.id
+                template=template,
+                resources=resources,
+                learning_items=target_words,
+                answer=task_obj.answer,
+                task_id=task_obj.id,
+            )
+
+            result_tasks.append(task)
+
+        return result_tasks
+
+    def get_tasks_by_template(self, template_id: int, number: int = 100) -> List[Task]:
+        """
+        Return tasks that are based on the specified template ID.
+        Returns at most 'number' tasks unless otherwise specified.
+        """
+        # Query for tasks associated with the specified template ID
+        tasks_query = (
+            self.session.query(TaskDBObj)
+            .filter(TaskDBObj.template_id == template_id)
+            .limit(number)
+        )
+
+        tasks = tasks_query.all()
+
+        # Convert TaskDBObj to Task instances
+        result_tasks = []
+        for task_obj in tasks:
+            template = self.convert_template_obj(task_obj.template)
+            resources = {
+                res.parameter.name: Resource(
+                    resource_id=res.resource.id,
+                    resource=res.resource.resource_text,
+                    target_words=set(res.resource.words),
+                )
+                for res in task_obj.resources
+            }
+            target_words = set(
+                [
+                    LexicalItem(
+                        item=word.word.word,
+                        pos=word.word.pos,
+                        freq=word.word.freq,
+                        id=word.word.id,
+                    )
+                    for word in task_obj.target_words
+                ]
+            )
+
+            Task_type_class = get_task_type_class(template.task_type)
+            task = Task_type_class(
+                template=template,
+                resources=resources,
+                learning_items=target_words,
+                answer=task_obj.answer,
+                task_id=task_obj.id,
+            )
+
+            result_tasks.append(task)
+
+        return result_tasks
+
+    def get_tasks_for_words(
+        self, target_words: Set[LexicalItem], number: int = 100
+    ) -> List[Task]:
+        """
+        Return tasks whose task.target_words is a superset of the target_words.
+        Returns at most 100 tasks unless otherwise specified.
+        """
+        # Extract IDs from LexicalItem set for comparison
+        target_word_ids = {word.id for word in target_words}
+
+        # Construct a subquery to filter tasks based on word presence
+        task_ids_with_all_words = (
+            self.session.query(TaskDBObj.id)
+            .join(TaskTargetWordDBObj, TaskDBObj.target_words)
+            .filter(TaskTargetWordDBObj.word_id.in_(target_word_ids))
+            .group_by(TaskDBObj.id)
+            .having(func.count(TaskDBObj.id) == len(target_word_ids))
+        )
+
+        # Now query for tasks where task IDs are in the above subquery results
+        tasks_query = (
+            self.session.query(TaskDBObj)
+            .filter(TaskDBObj.id.in_(task_ids_with_all_words.subquery()))
+            .limit(number)
+        )
+
+        tasks = tasks_query.all()
+
+        # Convert TaskDBObj to Task instances
+        result_tasks = []
+        for task_obj in tasks:
+            template = self.convert_template_obj(task_obj.template)
+            resources = {
+                res.parameter.name: Resource(
+                    resource_id=res.resource.id,
+                    resource=res.resource.resource_text,
+                    target_words=set(res.resource.words),
+                )
+                for res in task_obj.resources
+            }
+            target_words = set(
+                [
+                    LexicalItem(
+                        item=word.word.word,
+                        pos=word.word.pos,
+                        freq=word.word.freq,
+                        id=word.word.id,
+                    )
+                    for word in task_obj.target_words
+                ]
+            )
+
+            Task_type_class = get_task_type_class(template.task_type)
+            task = Task_type_class(
+                template=template,
+                resources=resources,
+                learning_items=target_words,
+                answer=task_obj.answer,
+                task_id=task_obj.id,
             )
 
             result_tasks.append(task)
@@ -823,7 +961,9 @@ class DatabaseManager():
         """
         pass
 
-    def save_user_lesson_data(self, user_id: int, lesson_data: List[Evaluation]) -> None:
+    def save_user_lesson_data(
+        self, user_id: int, lesson_data: List[Evaluation]
+    ) -> None:
         """
         Saves user lesson data into the database by saving into user_lessons table,
         adding the evaluations list in order into evaluations table, and saving each history entry
@@ -837,21 +977,18 @@ class DatabaseManager():
         new_lesson = UserLessonDBObj(user_id=user_id)
 
         for eval_index, evaluation in enumerate(lesson_data, start=1):
-            new_evaluation = EvaluationDBObj(
-                sequence_number=eval_index
-            )
+            new_evaluation = EvaluationDBObj(sequence_number=eval_index)
 
             for history_index, history_entry in enumerate(evaluation.history, start=1):
                 new_history_entry = HistoryEntrieDBObj(
                     sequence_number=history_index,
                     task_id=history_entry.task.id,
-                    response=history_entry.response
+                    response=history_entry.response,
                 )
 
                 for score in history_entry.evaluation_result:
                     new_score = EntryScoreDBObj(
-                        word_id=score.word_id,
-                        score=score.score
+                        word_id=score.word_id, score=score.score
                     )
                     new_history_entry.scores.append(new_score)
                 new_evaluation.history_entries.append(new_history_entry)
@@ -873,10 +1010,12 @@ class DatabaseManager():
             raise ValueDoesNotExistInDB("User does not exist.")
 
         # Get the most recent lesson
-        recent_lesson = self.session.query(UserLessonDBObj)\
-            .filter_by(user_id=user_id)\
-            .order_by(UserLessonDBObj.timestamp.desc())\
+        recent_lesson = (
+            self.session.query(UserLessonDBObj)
+            .filter_by(user_id=user_id)
+            .order_by(UserLessonDBObj.timestamp.desc())
             .first()
+        )
 
         if not recent_lesson:
             return None
@@ -886,9 +1025,18 @@ class DatabaseManager():
         for evaluation_obj in recent_lesson.evaluations:
             history_entries = []
             for entry in evaluation_obj.history_entries:
-                scores = set([Score(word_id=score.word_id, score=score.score) for score in entry.scores])
+                scores = set(
+                    [
+                        Score(word_id=score.word_id, score=score.score)
+                        for score in entry.scores
+                    ]
+                )
                 task = self.get_task_by_id(entry.task_id)
-                history_entries.append(HistoryEntry(task=task, response=entry.response, evaluation_result=scores))
+                history_entries.append(
+                    HistoryEntry(
+                        task=task, response=entry.response, evaluation_result=scores
+                    )
+                )
 
             evaluation = Evaluation()
             evaluation.history = history_entries
@@ -896,7 +1044,9 @@ class DatabaseManager():
 
         return evaluations
 
-    def retrieve_words_for_lesson(self, user_id: int, word_num: int) -> Set[LexicalItem]:
+    def retrieve_words_for_lesson(
+        self, user_id: int, word_num: int
+    ) -> Set[LexicalItem]:
         """
         Retrieves word_num words with highest frequency for which the user
         with user_id does not have scores yet. The words should have pos of either
@@ -905,11 +1055,14 @@ class DatabaseManager():
         """
         pass
 
+
 if __name__ == "__main__":
     word_freq_output_file_path = "word_freq.txt"
     word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
     filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
-    list_of_tuples: List[Tuple[str, str, int]] = list(filtered_dataframe.to_records(index=False))
+    list_of_tuples: List[Tuple[str, str, int]] = list(
+        filtered_dataframe.to_records(index=False)
+    )
     # convert numpy.int64 to Python integer
     list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples]
     db = DatabaseManager()

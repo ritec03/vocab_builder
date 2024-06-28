@@ -6,7 +6,13 @@ import sqlite3
 
 from sqlalchemy import select
 from data_structures import Language, LexicalItem, Resource, Score, TaskType
-from database import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, SCHEMA_PATH, ValueDoesNotExistInDB
+from database import (
+    MAX_SCORE,
+    MAX_USER_NAME_LENGTH,
+    MIN_SCORE,
+    SCHEMA_PATH,
+    ValueDoesNotExistInDB,
+)
 from database_orm import DatabaseManager, LearningDataDBObj, UserLessonDBObj, WordDBObj
 import os
 
@@ -16,6 +22,7 @@ from task_template import TaskTemplate
 
 # Define a test database file path
 TEST_DB_FILE = "test_database.db"
+
 
 class TestDatabaseFunctions(unittest.TestCase):
     def setUp(self):
@@ -36,13 +43,17 @@ class TestDatabaseFunctions(unittest.TestCase):
         # Assert that the user is inserted successfully
         user = self.db_manager.get_user_by_id(user_id)
         self.assertIsNotNone(user)  # Check that a row is returned
-        self.assertEqual(user.user_name, "test_user")  # Check that the inserted user name matches
+        self.assertEqual(
+            user.user_name, "test_user"
+        )  # Check that the inserted user name matches
 
     def test_insert_duplicate_user(self):
         # Test inserting a user with the same user name (should fail)
         self.db_manager.insert_user("test_user")
         with self.assertRaises(ValueError):
-            self.db_manager.insert_user("test_user")  # Inserting the same user name should raise IntegrityError
+            self.db_manager.insert_user(
+                "test_user"
+            )  # Inserting the same user name should raise IntegrityError
 
     def test_remove_user_success(self):
         # Test removing an existing user
@@ -55,18 +66,26 @@ class TestDatabaseFunctions(unittest.TestCase):
     def test_remove_nonexistent_user(self):
         # Test removing a non-existent user
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.remove_user(999)  # Attempting to remove a non-existent user should raise an exception
-            
+            self.db_manager.remove_user(
+                999
+            )  # Attempting to remove a non-existent user should raise an exception
+
     def test_add_user_invalid_name_type(self):
         # Test adding a user with a user name that is not a string
         with self.assertRaises(ValueError):
-            self.db_manager.insert_user(123)  # Inserting a non-string user name should raise a ValueError
+            self.db_manager.insert_user(
+                123
+            )  # Inserting a non-string user name should raise a ValueError
 
     def test_add_user_long_name(self):
         # Test adding a user with a user name that is too long
-        long_username = "a" * (MAX_USER_NAME_LENGTH + 1)  # Create a user name longer than MAX_USER_NAME_LENGTH
+        long_username = "a" * (
+            MAX_USER_NAME_LENGTH + 1
+        )  # Create a user name longer than MAX_USER_NAME_LENGTH
         with self.assertRaises(ValueError):
-            self.db_manager.insert_user(long_username)  # Inserting a long user name should raise a ValueError
+            self.db_manager.insert_user(
+                long_username
+            )  # Inserting a long user name should raise a ValueError
 
     def test_add_two_word_entries(self):
         # Test adding two word entries to the words table successfully
@@ -82,7 +101,9 @@ class TestDatabaseFunctions(unittest.TestCase):
             self.assertEqual(word.pos, test_word[1])
             self.assertEqual(word.freq, test_word[2])
 
-        self.assertEqual(len(word_ids), len(list(test_words.values())))  # Check that there are no entires left
+        self.assertEqual(
+            len(word_ids), len(list(test_words.values()))
+        )  # Check that there are no entires left
 
     def test_update_existing_word_entry(self):
         # Test updating an existing word/pos entry in the words table
@@ -95,20 +116,26 @@ class TestDatabaseFunctions(unittest.TestCase):
 
         # Assert that the frequency is updated
         word = self.db_manager.get_word_by_id(word_ids[0])
-        self.assertEqual(word.freq, NEW_FREQ)  # Check that the frequency is updated to NEW_FREQ
+        self.assertEqual(
+            word.freq, NEW_FREQ
+        )  # Check that the frequency is updated to NEW_FREQ
 
     def test_add_existing_word_entry(self):
         # Test adding an existing word/pos entry to the words table
         word_list = [("cat", "NOUN", 10)]
         self.db_manager.add_words_to_db(word_list)  # Add initial entry
         word_list_duplicate = [("cat", "NOUN", 10)]
-        word_ids = self.db_manager.add_words_to_db(word_list_duplicate)  # Attempt to add the same entry again
+        word_ids = self.db_manager.add_words_to_db(
+            word_list_duplicate
+        )  # Attempt to add the same entry again
 
         # Assert that only one word exists and its frequency remains the same
         word = self.db_manager.get_word_by_id(word_ids[0])
         self.assertEqual(word.freq, 10)  # Check that the frequency remains 10
         # Assert that no new rows are added
-        all_words = self.db_manager.session.execute(select(WordDBObj)).all() # TODO remove sqlalchemy code
+        all_words = self.db_manager.session.execute(
+            select(WordDBObj)
+        ).all()  # TODO remove sqlalchemy code
         self.assertEqual(len(all_words), 1)  # Ensure only one word entry exists
 
     def test_add_word_score_update_existing(self):
@@ -145,7 +172,7 @@ class TestDatabaseFunctions(unittest.TestCase):
         entry = self.db_manager.session.execute(
             select(LearningDataDBObj).where(
                 LearningDataDBObj.user_id == user_id,
-                LearningDataDBObj.word_id == word_id
+                LearningDataDBObj.word_id == word_id,
             )
         ).scalar()
         self.assertEqual(entry.score, score_value)  # Check that the score is 8
@@ -158,7 +185,9 @@ class TestDatabaseFunctions(unittest.TestCase):
 
         # Test adding a word score with a non-existent user
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.add_word_score(999, Score(word_id, score_value))  # Attempting to add a score for a non-existent user should raise an error
+            self.db_manager.add_word_score(
+                999, Score(word_id, score_value)
+            )  # Attempting to add a score for a non-existent user should raise an error
 
     def test_add_word_score_nonexistent_word_id(self):
         user_id = self.db_manager.insert_user("test_user")
@@ -166,7 +195,9 @@ class TestDatabaseFunctions(unittest.TestCase):
 
         # Test adding a word score with a non-existent word_id
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.add_word_score(user_id, Score(999, score_value))  # Attempting to add a score for a non-existent word should raise an error
+            self.db_manager.add_word_score(
+                user_id, Score(999, score_value)
+            )  # Attempting to add a score for a non-existent word should raise an error
 
     def test_add_word_score_incorrect_score(self):
         user_id = self.db_manager.insert_user("test_user")
@@ -176,16 +207,21 @@ class TestDatabaseFunctions(unittest.TestCase):
 
         # Test adding a word score with an incorrect score
         with self.assertRaises(ValueError):
-            self.db_manager.add_word_score(user_id, Score(word_id, MIN_SCORE - 1))  # Attempting to add a negative score should raise an error
+            self.db_manager.add_word_score(
+                user_id, Score(word_id, MIN_SCORE - 1)
+            )  # Attempting to add a negative score should raise an error
         with self.assertRaises(ValueError):
-            self.db_manager.add_word_score(user_id, Score(word_id, MAX_SCORE + 1))  # Attempting to add a score above the maximum should raise an error
+            self.db_manager.add_word_score(
+                user_id, Score(word_id, MAX_SCORE + 1)
+            )  # Attempting to add a score above the maximum should raise an error
+
 
 class TestUpdateUserScores(unittest.TestCase):
     def setUp(self):
         # Ensure the test database does not exist before starting each test
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
-        
+
         # Initialize the database manager
         self.db_manager = DatabaseManager(TEST_DB_FILE)
 
@@ -217,27 +253,33 @@ class TestUpdateUserScores(unittest.TestCase):
 
     def test_update_user_scores_multiple_scores_update(self):
         # Prepare the initial and updated scores
-        initial_scores = {Score(word_id=id, score=3 + i) for i, id in enumerate(self.word_ids)}
-        updated_scores = {Score(word_id=self.word_ids[0], score=8), Score(word_id=self.word_ids[1], score=9)}
-        
+        initial_scores = {
+            Score(word_id=id, score=3 + i) for i, id in enumerate(self.word_ids)
+        }
+        updated_scores = {
+            Score(word_id=self.word_ids[0], score=8),
+            Score(word_id=self.word_ids[1], score=9),
+        }
+
         # Apply the initial scores to the database
         self.db_manager.update_user_scores(self.user_id, initial_scores)
-        
+
         # Update the scores with the new values
         self.db_manager.update_user_scores(self.user_id, updated_scores)
-        
+
         # Retrieve the scores from the database
         actual_scores_dict = self.db_manager.retrieve_user_scores(self.user_id)
-        
+
         # Convert dictionary to set of Scores for easier comparison
         actual_scores = set(actual_scores_dict.values())
 
         # Prepare the expected scores set
-        expected_scores = updated_scores.union({Score(word_id=self.word_ids[2], score=5)})  # Include the unchanged score
-        
+        expected_scores = updated_scores.union(
+            {Score(word_id=self.word_ids[2], score=5)}
+        )  # Include the unchanged score
+
         # Assert that the sets are equal, confirming both updates and non-changes
         self.assertEqual(actual_scores, expected_scores)
-
 
     def test_update_user_scores_nonexistent_word(self):
         # Test updating scores for a non-existent word
@@ -249,7 +291,10 @@ class TestUpdateUserScores(unittest.TestCase):
         # Test updating scores for a non-existent user
         scores = {Score(word_id=self.word_ids[0], score=7)}
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.update_user_scores(9999, scores)  # Assuming 9999 is a non-existent user ID
+            self.db_manager.update_user_scores(
+                9999, scores
+            )  # Assuming 9999 is a non-existent user ID
+
 
 class TestRetrieveUserScores(unittest.TestCase):
     def setUp(self):
@@ -260,8 +305,10 @@ class TestRetrieveUserScores(unittest.TestCase):
 
         # Insert test data
         user_id = self.db_manager.insert_user("test_user")
-        word_ids = self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
-        
+        word_ids = self.db_manager.add_words_to_db(
+            [("test", "noun", 1), ("study", "verb", 2)]
+        )
+
         # Add scores for both words for the user
         self.db_manager.add_word_score(user_id, Score(word_ids[0], 5))
         self.db_manager.add_word_score(user_id, Score(word_ids[1], 8))
@@ -300,7 +347,10 @@ class TestRetrieveUserScores(unittest.TestCase):
         Test retrieving scores for a nonexistent user.
         """
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.retrieve_user_scores(9999)  # Assuming 9999 is an ID that does not exist
+            self.db_manager.retrieve_user_scores(
+                9999
+            )  # Assuming 9999 is an ID that does not exist
+
 
 class TestTemplates(unittest.TestCase):
     def setUp(self):
@@ -311,8 +361,10 @@ class TestTemplates(unittest.TestCase):
 
         # Insert test data
         user_id = self.db_manager.insert_user("test_user")
-        word_ids = self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
-        
+        word_ids = self.db_manager.add_words_to_db(
+            [("test", "noun", 1), ("study", "verb", 2)]
+        )
+
         self.template_string = "test template string"
         self.template_description = "test description"
         self.template_examples = ["example 1", "example 2"]
@@ -320,7 +372,7 @@ class TestTemplates(unittest.TestCase):
         self.target_language = Language.GERMAN
         self.parameter_description = {
             "sentence": "Sentence in target language to be translated into English.",
-            "phrase": "Phrase in target language to be translated into English."
+            "phrase": "Phrase in target language to be translated into English.",
         }
 
         self.template = TaskTemplate(
@@ -330,7 +382,7 @@ class TestTemplates(unittest.TestCase):
             template_description=self.template_description,
             template_examples=self.template_examples,
             parameter_description=self.parameter_description,
-            task_type=TaskType.ONE_WAY_TRANSLATION
+            task_type=TaskType.ONE_WAY_TRANSLATION,
         )
 
     def tearDown(self):
@@ -342,30 +394,38 @@ class TestTemplates(unittest.TestCase):
     def test_add_get_template(self):
         # add template
         template_id = self.db_manager.add_template(self.template)
-        
+
         # retrieve and check template
         retrieved_template = self.db_manager.get_template_by_id(template_id)
 
         # check the template
-        self.assertEqual(retrieved_template.starting_language, self.template.starting_language)
-        self.assertEqual(retrieved_template.target_language, self.template.target_language)
-        self.assertEqual(retrieved_template.get_template_string(), self.template.get_template_string())
+        self.assertEqual(
+            retrieved_template.starting_language, self.template.starting_language
+        )
+        self.assertEqual(
+            retrieved_template.target_language, self.template.target_language
+        )
+        self.assertEqual(
+            retrieved_template.get_template_string(),
+            self.template.get_template_string(),
+        )
         self.assertEqual(retrieved_template.description, self.template.description)
         self.assertEqual(retrieved_template.examples, self.template.examples)
-        self.assertEqual(retrieved_template.parameter_description, self.template.parameter_description)
+        self.assertEqual(
+            retrieved_template.parameter_description,
+            self.template.parameter_description,
+        )
         self.assertEqual(retrieved_template.task_type, self.template.task_type)
-
-
 
     def test_add_template_duplicate_template_string(self):
         template_2 = TaskTemplate(
             target_language=self.target_language,
             starting_language=self.starting_language,
-            template_string=self.template_string, # keep the same
+            template_string=self.template_string,  # keep the same
             template_description=self.template_description + "blah",
-            template_examples=self.template_examples +  ["blah"],
+            template_examples=self.template_examples + ["blah"],
             parameter_description={**self.parameter_description, **{"blah": "blah"}},
-            task_type=TaskType.ONE_WAY_TRANSLATION
+            task_type=TaskType.ONE_WAY_TRANSLATION,
         )
 
         self.db_manager.add_template(self.template)
@@ -400,10 +460,17 @@ class TestTemplates(unittest.TestCase):
         template_params = self.db_manager.get_template_parameters(template_id)
 
         self.assertEqual(len(list(template_params.keys())), 2)
-        self.assertEqual(set(list(template_params.keys())), set(list(self.template.parameter_description.keys())))
+        self.assertEqual(
+            set(list(template_params.keys())),
+            set(list(self.template.parameter_description.keys())),
+        )
         keys = list(template_params.keys())
-        self.assertEqual(template_params[keys[0]], self.template.parameter_description[keys[0]])
-        self.assertEqual(template_params[keys[1]], self.template.parameter_description[keys[1]])
+        self.assertEqual(
+            template_params[keys[0]], self.template.parameter_description[keys[0]]
+        )
+        self.assertEqual(
+            template_params[keys[1]], self.template.parameter_description[keys[1]]
+        )
 
     def test_get_template_parameters_no_params(self):
         self.template.parameter_description = {}
@@ -419,7 +486,9 @@ class TestTemplates(unittest.TestCase):
         # TODO add function for equality of tempaltes
 
         self.db_manager.add_template(self.template)
-        templates_1 = self.db_manager.get_templates_by_task_type(self.template.task_type)
+        templates_1 = self.db_manager.get_templates_by_task_type(
+            self.template.task_type
+        )
         self.assertEqual(len(templates_1), 1)
         self.assertIsInstance(templates_1[0], TaskTemplate)
 
@@ -428,9 +497,9 @@ class TestTemplates(unittest.TestCase):
             starting_language=self.starting_language,
             template_string=self.template_string + "blah",
             template_description=self.template_description + "blah",
-            template_examples=self.template_examples +  ["blah"],
+            template_examples=self.template_examples + ["blah"],
             parameter_description={**self.parameter_description, **{"blah": "blah"}},
-            task_type=self.template.task_type
+            task_type=self.template.task_type,
         )
 
         self.db_manager.add_template(template_2)
@@ -439,9 +508,10 @@ class TestTemplates(unittest.TestCase):
         self.assertIsInstance(templates_2[0], TaskTemplate)
         self.assertIsInstance(templates_2[1], TaskTemplate)
 
-        #try non existent task type
+        # try non existent task type
         with self.assertRaises(ValueError):
             templates_2 = self.db_manager.get_templates_by_task_type("blah")
+
 
 class TestResources(unittest.TestCase):
     def setUp(self):
@@ -454,7 +524,9 @@ class TestResources(unittest.TestCase):
 
         # Insert test data
         self.user_id = self.db_manager.insert_user("test_user")
-        self.word_ids = self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
+        self.word_ids = self.db_manager.add_words_to_db(
+            [("test", "noun", 1), ("study", "verb", 2)]
+        )
         self.word_1 = self.db_manager.get_word_by_id(1)
         self.word_2 = self.db_manager.get_word_by_id(2)
 
@@ -466,20 +538,28 @@ class TestResources(unittest.TestCase):
 
     def test_add_get_resource_manual(self):
         resourse_str = "test resourse"
-        resource = self.db_manager.add_resource_manual(resourse_str, set([self.word_1, self.word_2]))
+        resource = self.db_manager.add_resource_manual(
+            resourse_str, set([self.word_1, self.word_2])
+        )
 
         retrieved_resource = self.db_manager.get_resource_by_id(resource.resource_id)
 
         self.assertEqual(retrieved_resource.resource, resource.resource)
-        self.assertEqual(set(retrieved_resource.target_words), set(resource.target_words))
+        self.assertEqual(
+            set(retrieved_resource.target_words), set(resource.target_words)
+        )
         self.assertEqual(retrieved_resource.resource_id, resource.resource_id)
 
     def test_resources_by_target_word(self):
         target_word = self.word_1
         # add resource
-        resource1 = self.db_manager.add_resource_manual("resourse_str1", set([self.word_1, self.word_2]))
-        resource2 = self.db_manager.add_resource_manual("resourse_str2", set([self.word_2]))
-    
+        resource1 = self.db_manager.add_resource_manual(
+            "resourse_str1", set([self.word_1, self.word_2])
+        )
+        resource2 = self.db_manager.add_resource_manual(
+            "resourse_str2", set([self.word_2])
+        )
+
         retrieved_resources = self.db_manager.get_resources_by_target_word(target_word)
         self.assertEqual(len(retrieved_resources), 1)
         self.assertEqual(retrieved_resources[0].resource_id, resource1.resource_id)
@@ -487,14 +567,19 @@ class TestResources(unittest.TestCase):
     def test_resources_by_target_word_none(self):
         target_word = self.word_1
         # add resource
-        resource1 = self.db_manager.add_resource_manual("resourse_str1", set([ self.word_2]))
-        resource2 = self.db_manager.add_resource_manual("resourse_str2", set([self.word_2]))
-    
+        resource1 = self.db_manager.add_resource_manual(
+            "resourse_str1", set([self.word_2])
+        )
+        resource2 = self.db_manager.add_resource_manual(
+            "resourse_str2", set([self.word_2])
+        )
+
         retrieved_resources = self.db_manager.get_resources_by_target_word(target_word)
         self.assertEqual(len(retrieved_resources), 0)
 
     # def test_remove_resource(self):
     #     pass
+
 
 class TestTasks(unittest.TestCase):
     def setUp(self):
@@ -507,7 +592,9 @@ class TestTasks(unittest.TestCase):
 
         # Insert test data
         self.user_id = self.db_manager.insert_user("test_user")
-        self.word_ids = self.db_manager.add_words_to_db([("test", "noun", 1), ("study", "verb", 2)])
+        self.word_ids = self.db_manager.add_words_to_db(
+            [("test", "noun", 1), ("study", "verb", 2)]
+        )
         self.word_1 = self.db_manager.get_word_by_id(1)
         self.word_2 = self.db_manager.get_word_by_id(2)
 
@@ -519,7 +606,7 @@ class TestTasks(unittest.TestCase):
         self.target_language = Language.GERMAN
         self.parameter_description = {
             "sentence": "Sentence in target language to be translated into English.",
-            "phrase": "Phrase in target language to be translated into English."
+            "phrase": "Phrase in target language to be translated into English.",
         }
 
         self.template = TaskTemplate(
@@ -529,16 +616,17 @@ class TestTasks(unittest.TestCase):
             template_description=self.template_description,
             template_examples=self.template_examples,
             parameter_description=self.parameter_description,
-            task_type=TaskType.ONE_WAY_TRANSLATION
+            task_type=TaskType.ONE_WAY_TRANSLATION,
         )
         self.template_id = self.db_manager.add_template(self.template)
         # add test resources
-        self.resource1 = self.db_manager.add_resource_manual("test resource 1", set([self.word_1]))
-        self.resource2 = self.db_manager.add_resource_manual("test resource 2", set([self.word_2]))
-        self.resources = {
-            'sentence': self.resource1,
-            'phrase': self.resource2
-        }
+        self.resource1 = self.db_manager.add_resource_manual(
+            "test resource 1", set([self.word_1])
+        )
+        self.resource2 = self.db_manager.add_resource_manual(
+            "test resource 2", set([self.word_2])
+        )
+        self.resources = {"sentence": self.resource1, "phrase": self.resource2}
 
         self.template2 = TaskTemplate(
             target_language=self.target_language,
@@ -551,9 +639,9 @@ class TestTasks(unittest.TestCase):
                 "A": "Option a of the multiple choice question.",
                 "B": "Option b of the multiple choice question.",
                 "C": "Option c of the multiple choice question.",
-                "D": "Option d of the multiple choice question."
-        },
-            task_type=TaskType.FOUR_CHOICE
+                "D": "Option d of the multiple choice question.",
+            },
+            task_type=TaskType.FOUR_CHOICE,
         )
 
         self.four_choice_resources = {
@@ -561,7 +649,7 @@ class TestTasks(unittest.TestCase):
             "A": self.resource2,
             "B": self.resource2,
             "C": self.resource2,
-            "D": self.resource2
+            "D": self.resource2,
         }
         self.template2_id = self.db_manager.add_template(self.template2)
 
@@ -577,34 +665,54 @@ class TestTasks(unittest.TestCase):
         """
         target_words = set([self.word_1, self.word_2])
         answer = "The correct translation"
-        
+
         # Add the task to the database
         task = self.db_manager.add_task(
             template_id=self.template_id,
             resources=self.resources,
             target_words=target_words,
-            answer=answer
+            answer=answer,
         )
-        
+
         # Retrieve the task by ID
         retrieved_task = self.db_manager.get_task_by_id(task.id)
-        
+
         # Check that the retrieved task matches the added task
         self.assertEqual(retrieved_task.id, task.id)
         self.assertEqual(retrieved_task.template.id, task.template.id)
         self.assertEqual(retrieved_task.correctAnswer, answer)
-        
+
         # Check the resources and target words are correctly associated
-        self.assertEqual(set(retrieved_task.resources.keys()), set(self.resources.keys()))
-        self.assertEqual(set(lexical_item.id for lexical_item in retrieved_task.learning_items), set(word.id for word in target_words))
+        self.assertEqual(
+            set(retrieved_task.resources.keys()), set(self.resources.keys())
+        )
+        self.assertEqual(
+            set(lexical_item.id for lexical_item in retrieved_task.learning_items),
+            set(word.id for word in target_words),
+        )
 
     def test_get_tasks_by_type(self):
         """
         Test by adding three tasks with two tasks of same task type and returning those.
         """
-        self.db_manager.add_task(template_id=self.template2_id, resources=self.four_choice_resources, target_words=set(), answer="A")
-        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words=set(), answer="Answer 2")
-        self.db_manager.add_task(template_id=self.template2_id, resources=self.four_choice_resources, target_words=set(), answer="B")
+        self.db_manager.add_task(
+            template_id=self.template2_id,
+            resources=self.four_choice_resources,
+            target_words=set(),
+            answer="A",
+        )
+        self.db_manager.add_task(
+            template_id=self.template_id,
+            resources=self.resources,
+            target_words=set(),
+            answer="Answer 2",
+        )
+        self.db_manager.add_task(
+            template_id=self.template2_id,
+            resources=self.four_choice_resources,
+            target_words=set(),
+            answer="B",
+        )
 
         # Fetch tasks by type
         tasks = self.db_manager.get_tasks_by_type(self.template2.task_type)
@@ -614,7 +722,6 @@ class TestTasks(unittest.TestCase):
         for task in tasks:
             self.assertIsInstance(task, get_task_type_class(self.template2.task_type))
             self.assertEqual(task.template.task_type, self.template2.task_type)
-
 
     def test_get_tasks_by_type_no_tasks(self):
         """
@@ -638,9 +745,24 @@ class TestTasks(unittest.TestCase):
         """
         # Add multiple tasks with different templates
 
-        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words=set(), answer="Answer 1")
-        self.db_manager.add_task(template_id=self.template2_id, resources=self.four_choice_resources, target_words=set(), answer="A")
-        self.db_manager.add_task(template_id=self.template2_id, resources=self.four_choice_resources, target_words=set(), answer="B")
+        self.db_manager.add_task(
+            template_id=self.template_id,
+            resources=self.resources,
+            target_words=set(),
+            answer="Answer 1",
+        )
+        self.db_manager.add_task(
+            template_id=self.template2_id,
+            resources=self.four_choice_resources,
+            target_words=set(),
+            answer="A",
+        )
+        self.db_manager.add_task(
+            template_id=self.template2_id,
+            resources=self.four_choice_resources,
+            target_words=set(),
+            answer="B",
+        )
 
         # Fetch tasks by the first template
         tasks = self.db_manager.get_tasks_by_template(self.template2_id)
@@ -651,13 +773,13 @@ class TestTasks(unittest.TestCase):
         Test the case when no tasks are returned.
         """
         another_template = TaskTemplate(
-            starting_language = Language.ENGLISH,
-            target_language = Language.GERMAN,
+            starting_language=Language.ENGLISH,
+            target_language=Language.GERMAN,
             template_description="Non-existent description",
-            template_string= "some string",
+            template_string="some string",
             template_examples=["Non-existent example 1"],
             parameter_description={"sentence": "Non-existent description."},
-            task_type=TaskType.ONE_WAY_TRANSLATION
+            task_type=TaskType.ONE_WAY_TRANSLATION,
         )
         another_template_id = self.db_manager.add_template(another_template)
         tasks = self.db_manager.get_tasks_by_template(another_template_id)
@@ -668,11 +790,23 @@ class TestTasks(unittest.TestCase):
         Test retrieving tasks whose target words include all specified words.
         """
         target_words_subset = {self.word_1}  # This should match tasks with word_1
-        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words={self.word_1}, answer="Extended")
+        self.db_manager.add_task(
+            template_id=self.template_id,
+            resources=self.resources,
+            target_words={self.word_1},
+            answer="Extended",
+        )
 
-        additional_word_id = self.db_manager.add_words_to_db([("additional", "noun", 10)])[0]
+        additional_word_id = self.db_manager.add_words_to_db(
+            [("additional", "noun", 10)]
+        )[0]
         additional_word = self.db_manager.get_word_by_id(additional_word_id)
-        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words={self.word_1, additional_word}, answer="Extended")
+        self.db_manager.add_task(
+            template_id=self.template_id,
+            resources=self.resources,
+            target_words={self.word_1, additional_word},
+            answer="Extended",
+        )
 
         # Test retrieving tasks that must include 'word_1'
         tasks = self.db_manager.get_tasks_for_words(target_words_subset)
@@ -693,7 +827,12 @@ class TestTasks(unittest.TestCase):
         Test retrieving tasks where there are two target words
         """
         two_words_ids = {self.word_1, self.word_2}
-        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words=two_words_ids, answer="Exact Match")
+        self.db_manager.add_task(
+            template_id=self.template_id,
+            resources=self.resources,
+            target_words=two_words_ids,
+            answer="Exact Match",
+        )
 
         tasks = self.db_manager.get_tasks_for_words(two_words_ids)
         self.assertTrue(all(two_words_ids == task.learning_items for task in tasks))
@@ -704,12 +843,17 @@ class TestTasks(unittest.TestCase):
         Test retrieving tasks where the task has only one word out of two required
         """
         two_words = {self.word_1, self.word_2}
-        self.db_manager.add_task(template_id=self.template_id, resources=self.resources, target_words={self.word_1}, answer="Superset Match")
+        self.db_manager.add_task(
+            template_id=self.template_id,
+            resources=self.resources,
+            target_words={self.word_1},
+            answer="Superset Match",
+        )
 
         tasks = self.db_manager.get_tasks_for_words(two_words)
-        self.assertGreaterEqual(len(tasks), 0)  # Should find at least one superset match
-
-            
+        self.assertGreaterEqual(
+            len(tasks), 0
+        )  # Should find at least one superset match
 
 class TestAddTask(unittest.TestCase):
     def setUp(self):
@@ -724,14 +868,13 @@ class TestAddTask(unittest.TestCase):
         # add template
         # Create a template with two parameters
         template_string = (
-            "Translate the following into English:\n" +
-            "   '$sentence' and '$phrase'"
+            "Translate the following into English:\n" + "   '$sentence' and '$phrase'"
         )
         template_description = "Description of the template"
         template_examples = ["Example one", "Example two"]
         parameter_description = {
             "sentence": "Sentence in target language to be translated into English.",
-            "phrase": "Phrase in target language to be translated into English."
+            "phrase": "Phrase in target language to be translated into English.",
         }
         test_template = TaskTemplate(
             target_language=Language.GERMAN,
@@ -740,17 +883,19 @@ class TestAddTask(unittest.TestCase):
             template_description=template_description,
             template_examples=template_examples,
             parameter_description=parameter_description,
-            task_type=TaskType.ONE_WAY_TRANSLATION
+            task_type=TaskType.ONE_WAY_TRANSLATION,
         )
 
         # Add the template
         self.added_template_id = self.db_manager.add_template(test_template)
-        # add words 
-        self.word_ids = self.db_manager.add_words_to_db([
-            ("word1", "noun", 10),
-            ("word2", "verb", 8)
-        ])
-        self.words = {LexicalItem("word1", "noun", 10, self.word_ids[0]), LexicalItem("word2", "verb", 8, self.word_ids[1])}
+        # add words
+        self.word_ids = self.db_manager.add_words_to_db(
+            [("word1", "noun", 10), ("word2", "verb", 8)]
+        )
+        self.words = {
+            LexicalItem("word1", "noun", 10, self.word_ids[0]),
+            LexicalItem("word2", "verb", 8, self.word_ids[1]),
+        }
 
     def tearDown(self):
         # Close the database connection and remove the test database file
@@ -759,14 +904,13 @@ class TestAddTask(unittest.TestCase):
             os.remove(TEST_DB_FILE)
 
     def create_example_task(self, resource_string1, resource_string2):
-        answer = 'Sample answer'
+        answer = "Sample answer"
         resource1 = self.db_manager.add_resource_manual(resource_string1, self.words)
         resource2 = self.db_manager.add_resource_manual(resource_string2, self.words)
-        resources = {
-            'sentence': resource1,
-            'phrase': resource2
-        }
-        task = self.db_manager.add_task(self.added_template_id, resources, self.words, answer)
+        resources = {"sentence": resource1, "phrase": resource2}
+        task = self.db_manager.add_task(
+            self.added_template_id, resources, self.words, answer
+        )
         return task
 
     def test_add_user_lesson_data(self):
@@ -775,22 +919,10 @@ class TestAddTask(unittest.TestCase):
         task3 = self.create_example_task("task3-r1", "task3-r2")
 
         evaluation1 = Evaluation()
-        evaluation1.add_entry(
-            task1,
-            "response1",
-            {Score(1,4)}
-        )
-        evaluation1.add_entry(
-            task2,
-            "response2",
-            {Score(1,6)}
-        )
+        evaluation1.add_entry(task1, "response1", {Score(1, 4)})
+        evaluation1.add_entry(task2, "response2", {Score(1, 6)})
         evaluation2 = Evaluation()
-        evaluation2.add_entry(
-            task3,
-            "response3",
-            {Score(1,5), Score(2,7)}
-        )
+        evaluation2.add_entry(task3, "response3", {Score(1, 5), Score(2, 7)})
 
         lesson_data = [evaluation1, evaluation2]
 
@@ -802,7 +934,11 @@ class TestAddTask(unittest.TestCase):
         if not previous_lesson_data:
             self.fail()
 
-        lesson_number = len(self.db_manager.session.scalars(select(UserLessonDBObj).where(UserLessonDBObj.id == self.user_id)).all())
+        lesson_number = len(
+            self.db_manager.session.scalars(
+                select(UserLessonDBObj).where(UserLessonDBObj.id == self.user_id)
+            ).all()
+        )
         self.assertEqual(lesson_number, 1)
 
         # Check evaluations
@@ -811,9 +947,12 @@ class TestAddTask(unittest.TestCase):
         for retrieved_eval, evaluation in zip(previous_lesson_data, lesson_data):
             self.assertEqual(len(retrieved_eval.history), len(evaluation.history))
 
-            for retr_history, history in zip (retrieved_eval.history, evaluation.history):
+            for retr_history, history in zip(
+                retrieved_eval.history, evaluation.history
+            ):
                 self.assertEqual(retr_history.response, history.response)
                 self.assertEqual(retr_history.correction, history.correction)
-                self.assertEqual(retr_history.evaluation_result, history.evaluation_result)
+                self.assertEqual(
+                    retr_history.evaluation_result, history.evaluation_result
+                )
                 self.assertEqual(retr_history.task.id, history.task.id)
-
