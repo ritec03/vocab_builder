@@ -28,12 +28,25 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import TIMESTAMP
-from database import ValueDoesNotExistInDB
 from sqlalchemy.engine import Engine
 from sqlalchemy import event
 from evaluation import Evaluation, HistoryEntry
 from task import FourChoiceTask, OneWayTranslaitonTask, Task, get_task_type_class
 from task_template import TaskTemplate
+
+class ValueDoesNotExistInDB(LookupError):
+    """
+    Error is thrown when a value queries in the database
+    does not exist (eg. user_name or word_id)
+    """
+    pass
+
+class InvalidDelete(Exception):
+    """
+    Error is thrown when deletion of an object from the DB
+    fails due to associations with other existing objects.
+    """
+    pass
 
 
 @event.listens_for(Engine, "connect")
@@ -131,9 +144,15 @@ class TaskDBObj(Base):
     template_id = mapped_column(ForeignKey("templates.id"))
     answer: Mapped[str]
     target_words: Mapped[List["TaskTargetWordDBObj"]] = relationship(
-        "TaskTargetWordDBObj"
+        "TaskTargetWordDBObj",
+        passive_deletes=True,
+        cascade="all, delete"
     )
-    resources: Mapped[List["TaskResourceDBObj"]] = relationship("TaskResourceDBObj")
+    resources: Mapped[List["TaskResourceDBObj"]] = relationship(
+        "TaskResourceDBObj",
+        passive_deletes=True,
+        cascade="all, delete"
+    )
     template: Mapped["TemplateDBObj"] = relationship("TemplateDBObj")
 
 
@@ -141,7 +160,7 @@ class TaskTargetWordDBObj(Base):
     __tablename__ = "task_target_words"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    task_id = mapped_column(Integer, ForeignKey("tasks.id"))
+    task_id = mapped_column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"))
     word_id = mapped_column(Integer, ForeignKey("words.id"))
     word: Mapped["WordDBObj"] = relationship("WordDBObj")
 
@@ -150,7 +169,7 @@ class TaskResourceDBObj(Base):
     __tablename__ = "task_resources"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    task_id = mapped_column(Integer, ForeignKey("tasks.id"))
+    task_id = mapped_column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"))
     resource_id = mapped_column(Integer, ForeignKey("resources.id"))
     parameter_id = mapped_column(Integer, ForeignKey("template_parameters.id"))
     resource: Mapped["ResourceDBObj"] = relationship("ResourceDBObj")
@@ -958,8 +977,21 @@ class DatabaseManager:
     def remove_task(self, task_id: int) -> None:
         """
         Removes task from tasks and task_resources tables.
+        Raises error if there are any lessons associated with that task.
         """
-        pass
+        # Retrieve the task to be deleted
+        task_to_remove = self.session.get(TaskDBObj, task_id)
+        if not task_to_remove:
+            raise ValueDoesNotExistInDB(f"Task with ID {task_id} does not exist.")
+        
+        # check if there are lessons
+        history_entires = self.session.scalars(select(HistoryEntrieDBObj).where(HistoryEntrieDBObj.task_id == task_id)).first()
+        if history_entires:
+            raise InvalidDelete("There are history entries associated with this task.")
+
+        # Delete the task itself
+        self.session.delete(task_to_remove)
+        self.session.commit()
 
     def save_user_lesson_data(
         self, user_id: int, lesson_data: List[Evaluation]

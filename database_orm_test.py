@@ -11,9 +11,8 @@ from database import (
     MAX_USER_NAME_LENGTH,
     MIN_SCORE,
     SCHEMA_PATH,
-    ValueDoesNotExistInDB,
 )
-from database_orm import DatabaseManager, LearningDataDBObj, UserLessonDBObj, WordDBObj
+from database_orm import DatabaseManager, InvalidDelete, LearningDataDBObj, TaskDBObj, TaskResourceDBObj, TaskTargetWordDBObj, UserLessonDBObj, WordDBObj, ValueDoesNotExistInDB
 import os
 
 from task import OneWayTranslaitonTask, Task, get_task_type_class
@@ -619,6 +618,7 @@ class TestTasks(unittest.TestCase):
             task_type=TaskType.ONE_WAY_TRANSLATION,
         )
         self.template_id = self.db_manager.add_template(self.template)
+        self.template.id = self.template_id
         # add test resources
         self.resource1 = self.db_manager.add_resource_manual(
             "test resource 1", set([self.word_1])
@@ -855,7 +855,93 @@ class TestTasks(unittest.TestCase):
             len(tasks), 0
         )  # Should find at least one superset match
 
-class TestAddTask(unittest.TestCase):
+    def create_example_task(self, resource_string1, resource_string2):
+        answer = "Sample answer"
+        resource1 = self.db_manager.add_resource_manual(resource_string1, {self.word_1})
+        resource2 = self.db_manager.add_resource_manual(resource_string2, {self.word_1})
+        resources = {"sentence": resource1, "phrase": resource2}
+        task = self.db_manager.add_task(
+            self.template.id, resources, {self.word_1}, answer
+        )
+        return task
+
+    def test_remove_task_no_lessons(self):
+        # add two tasks
+        task1 = self.db_manager.add_task(
+            template_id=self.template_id,
+            resources=self.resources,
+            target_words={self.word_1},
+            answer="Extended",
+        )
+        task2 = self.db_manager.add_task(
+            template_id=self.template_id,
+            resources=self.resources,
+            target_words={self.word_1, self.word_2},
+            answer="Extended",
+        )
+
+        num_of_tasks = len(self.db_manager.session.scalars(select(TaskDBObj)).all())
+        self.assertEqual(num_of_tasks, 2)
+
+        # remove one
+        self.db_manager.remove_task(task2.id)
+        # check
+
+        with self.assertRaises(ValueDoesNotExistInDB):
+            retrieved_task = self.db_manager.get_task_by_id(task2.id)
+        
+        # Ensure that no target words or resources are linked to the deleted task
+        remaining_task_target_words = self.db_manager.session.scalars(
+            select(TaskTargetWordDBObj).where(TaskTargetWordDBObj.task_id == task2.id)
+        ).all()
+        self.assertEqual(len(remaining_task_target_words), 0, "No target words should remain for the deleted task")
+
+        remaining_task_resources = self.db_manager.session.scalars(
+            select(TaskResourceDBObj).where(TaskResourceDBObj.task_id == task2.id)
+        ).all()
+        self.assertEqual(len(remaining_task_resources), 0, "No resources should remain for the deleted task")
+
+        num_of_tasks = len(self.db_manager.session.scalars(select(TaskDBObj)).all())
+        self.assertEqual(num_of_tasks, 1)
+
+        # 
+        retrieved_task = self.db_manager.get_task_by_id(task1.id)
+
+        # Check that the retrieved task matches the added task
+        self.assertEqual(retrieved_task.id, task1.id)
+        self.assertEqual(retrieved_task.template.id, task1.template.id)
+        self.assertEqual(retrieved_task.correctAnswer, task1.correctAnswer)
+
+        # Check the resources and target words are correctly associated
+        self.assertEqual(
+            set(retrieved_task.resources.keys()), set(self.resources.keys())
+        )
+        self.assertEqual(
+            set(lexical_item.id for lexical_item in retrieved_task.learning_items),
+            set(word.id for word in task1.learning_items),
+        )
+        
+    def test_remove_task_lessons(self):
+        task1 = self.create_example_task("task1-r1", "task1-r2")
+        task2 = self.create_example_task("task2-r1", "task2-r2")
+        task3 = self.create_example_task("task3-r1", "task3-r2")
+
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task1, "response1", {Score(1, 4)})
+        evaluation1.add_entry(task2, "response2", {Score(1, 6)})
+        evaluation2 = Evaluation()
+        evaluation2.add_entry(task3, "response3", {Score(1, 5), Score(2, 7)})
+
+        lesson_data = [evaluation1, evaluation2]
+
+        self.db_manager.save_user_lesson_data(self.user_id, lesson_data)
+
+        with self.assertRaises(InvalidDelete):
+            self.db_manager.remove_task(task1.id)
+
+
+
+class TestUserLessonData(unittest.TestCase):
     def setUp(self):
         # Initialize the database manager and create the test database
         if os.path.exists(TEST_DB_FILE):
