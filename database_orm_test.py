@@ -316,8 +316,8 @@ class TestTemplates(unittest.TestCase):
         self.template_string = "test template string"
         self.template_description = "test description"
         self.template_examples = ["example 1", "example 2"]
-        self.starting_language = "example language start"
-        self.target_language = "example language target"
+        self.starting_language = Language.ENGLISH
+        self.target_language = Language.GERMAN
         self.parameter_description = {
             "sentence": "Sentence in target language to be translated into English.",
             "phrase": "Phrase in target language to be translated into English."
@@ -359,8 +359,8 @@ class TestTemplates(unittest.TestCase):
 
     def test_add_template_duplicate_template_string(self):
         template_2 = TaskTemplate(
-            target_language=self.target_language + "blah",
-            starting_language=self.starting_language + "blah",
+            target_language=self.target_language,
+            starting_language=self.starting_language,
             template_string=self.template_string, # keep the same
             template_description=self.template_description + "blah",
             template_examples=self.template_examples +  ["blah"],
@@ -424,8 +424,8 @@ class TestTemplates(unittest.TestCase):
         self.assertIsInstance(templates_1[0], TaskTemplate)
 
         template_2 = TaskTemplate(
-            target_language=self.target_language + "blah",
-            starting_language=self.starting_language + "blah",
+            target_language=self.target_language,
+            starting_language=self.starting_language,
             template_string=self.template_string + "blah",
             template_description=self.template_description + "blah",
             template_examples=self.template_examples +  ["blah"],
@@ -515,8 +515,8 @@ class TestTasks(unittest.TestCase):
         self.template_string = "test template string"
         self.template_description = "test description"
         self.template_examples = ["example 1", "example 2"]
-        self.starting_language = "example language start"
-        self.target_language = "example language target"
+        self.starting_language = Language.ENGLISH
+        self.target_language = Language.GERMAN
         self.parameter_description = {
             "sentence": "Sentence in target language to be translated into English.",
             "phrase": "Phrase in target language to be translated into English."
@@ -651,10 +651,10 @@ class TestTasks(unittest.TestCase):
         Test the case when no tasks are returned.
         """
         another_template = TaskTemplate(
-            target_language="Non-existent language",
-            starting_language="Non-existent start language",
-            template_string="Non-existent template string",
+            starting_language = Language.ENGLISH,
+            target_language = Language.GERMAN,
             template_description="Non-existent description",
+            template_string= "some string",
             template_examples=["Non-existent example 1"],
             parameter_description={"sentence": "Non-existent description."},
             task_type=TaskType.ONE_WAY_TRANSLATION
