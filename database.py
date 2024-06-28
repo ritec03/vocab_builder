@@ -707,4 +707,4 @@ class DatabaseManager:
         if self.connection:
             self.connection.close()
 
-DB = DatabaseManager(DATABASE_PATH)
+# DB = DatabaseManager(DATABASE_PATH)

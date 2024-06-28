@@ -6,9 +6,6 @@ from data_structures import EXERCISE_THRESHOLD, FourChoiceAnswer, LexicalItem, S
 from evaluation_method import AIEvaluation, EvaluationMethod
 from task_template import Resource, TaskTemplate
 
-# TODO write code for resource saving into database
-# TODO create example templates manually
-
 class Task(ABC):
     def __init__(
             self, 
