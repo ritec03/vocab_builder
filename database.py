@@ -9,7 +9,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Set
 from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, Language, LexicalItem, Resource, Score, TaskType
 from evaluation import Evaluation
-from task import OneWayTranslaitonTask, Task
+from task import FourChoiceTask, OneWayTranslaitonTask, Task
 from task_template import TaskTemplate
 
 DATABASE_PATH = "vocabulary_app.db"
@@ -597,6 +597,8 @@ class DatabaseManager:
 
             if template.task_type == TaskType.ONE_WAY_TRANSLATION:
                 task = OneWayTranslaitonTask(template=template, resources=resources, learning_items=target_words, answer=answer, task_id=task_id)
+            elif template.task_type == TaskType.FOUR_CHOICE:
+                task = FourChoiceTask(template=template, resources=resources, learning_items=target_words, answer=answer, task_id=task_id)
             else:
                 raise Exception("Unknown task type.")
             return task

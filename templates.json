@@ -1,0 +1,53 @@
+[
+    {
+        "template_string": "Translate the following into English:\n   '$sentence'",
+        "template_description": "This template is used for translating sentences from a specified target language into English. The template requires a single input: a sentence in the target language. The answer string should be a standard translation sentence.",
+        "template_examples": [
+            "Translate the following into English:\n   'Wie geht es Ihnen?'",
+            "Translate the following into English:\n   'Was machst du heute?'"
+        ],
+        "parameter_description": {
+            "sentence": "A sentence in the target language that needs to be translated into English. The sentence should be clear and grammatically correct to ensure accurate translation."
+        },
+        "task_type": "ONE_WAY_TRANSLATION",
+        "starting_language": "ENGLISH",
+        "target_language": "GERMAN"
+    },
+    {
+        "template_string": "Which of the following coorectly translates the word \"$target_word\" into English?\n  a. '$A'\n   b. '$B'\n   c. '$C'\n   d. '$D'",
+        "template_description": "This template is used for creating multiple choice questions about single word translation. Each question should be presented along with four possible answers, where only one is correct.",
+        "template_examples": [
+            "Which of the following coorectly translates the word \"Freiheit\" into English?\n   a. 'Liberty'\n   b. 'Expression'\n   c. 'Excitement'\n   d. 'Essence'",
+            "Which of the following coorectly translates the word \"Apfel\" into English?\n   a. 'Banana'\n   b. 'Cherry'\n   c. 'Apple'\n   d. 'Peach'"
+        ],
+        "parameter_description": {
+            "target_word": "Word in the target language to be practiced in this task.",
+            "A": "Option a of the multiple choice question.",
+            "B": "Option b of the multiple choice question.",
+            "C": "Option c of the multiple choice question.",
+            "D": "Option d of the multiple choice question."
+        },
+        "task_type": "FOUR_CHOICE",
+        "starting_language": "ENGLISH",
+        "target_language": "GERMAN"
+    },
+    {
+        "template_string": "Which of the following words fits the blank in the following sentence \"$sentence\"?\n  a. '$A'\n   b. '$B'\n   c. '$C'\n   d. '$D'",
+        "template_description": "This template is used for creating multiple choice questions about choosing the best fitting word for a blank. Each question should be presented along with four possible answers, where only one is correct.",
+        "template_examples": [
+            "Which of the following words fits the blank in the following sentence 'Er ging zum ___ um Brot zu kaufen.'?\n  a. 'Supermarkt'\n   b. 'Badezimmer'\n   c. 'Keller'\n   d. 'Dach'",
+            "Which of the following words fits the blank in the following sentence 'Sie hat das Buch auf den ___ gelegt.'?\n  a. 'Boden'\n   b. 'Tisch'\n   c. 'Stuhl'\n   d. 'Schrank'"
+        ],
+        "parameter_description": {
+            "sentence": "Sentence with a blank indicating a missing word, where the missing words will be one of the given choices A to D.",
+            "A": "Option a of the multiple choice question.",
+            "B": "Option b of the multiple choice question.",
+            "C": "Option c of the multiple choice question.",
+            "D": "Option d of the multiple choice question."
+        },
+        "task_type": "FOUR_CHOICE",
+        "starting_language": "ENGLISH",
+        "target_language": "GERMAN"
+    }
+    
+]
