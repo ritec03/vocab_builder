@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import random
 from typing import Dict, List, Set, Tuple
 from data_structures import LexicalItem, TaskType
-from database import DB
+from database_orm import DB, DatabaseManager
 from llm_chains import invoke_task_generation_chain
 from task import Task
 from task_template import Resource, TaskTemplate
@@ -10,8 +10,6 @@ from template_retriever import TemplateRetriever
 
 class TaskFactory:
     """Either retrieves or generates a task"""
-    def __init__(self):
-        pass
 
     def get_task_for_word(self, target_words: Set[LexicalItem], template: TaskTemplate=None, criteria: List=[]) -> Task:
         """

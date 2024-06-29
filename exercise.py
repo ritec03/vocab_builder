@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import List, Set, Tuple
 from data_structures import NUM_NEW_WORDS_PER_LESSON, NUM_WORDS_PER_LESSON, LexicalItem, Score
-from database import DatabaseManager
+from database_orm import DB, DatabaseManager
 from evaluation import Evaluation
 from task import Task
 from task_generator import TaskFactory
-from database import DB
 from itertools import chain
 
 class ErrorCorrectionStrategy(ABC):
@@ -207,15 +206,15 @@ class LessonGenerator():
     Based on this information a lesson plan is created with tasks,
     error correction strategies and target words.
     """
-    def __init__(self, user_id: int, db: DatabaseManager):
+    def __init__(self, user_id: int):
         self.user_id = user_id
-        self.db = db
 
     def generate_lesson(self) -> Lesson:
         # NOTE later also take into account user lesson history
         # retrieve user learning data
         # retrieve user lesson evaluation history
         user_word_scores = self.retrieve_user_data()
+        print(user_word_scores)
         # choose target words
         target_words = self.choose_target_words(user_word_scores)
         # generate lesson plan
@@ -224,7 +223,7 @@ class LessonGenerator():
         return Lesson(self.user_id, target_words, lesson_plan)
     
     def retrieve_user_data(self) -> Set[Score]:
-        user_scores = self.db.retrieve_user_scores(self.user_id)
+        user_scores = DB.retrieve_user_scores(self.user_id)
         return user_scores
 
     def choose_target_words(self, user_scores: Set[Score]) -> Set[LexicalItem]:
@@ -240,7 +239,7 @@ class LessonGenerator():
 
         # Retrieve new words if needed
         if num_new_words_needed > 0:
-            new_words = self.db.retrieve_words_for_lesson(self.user_id, num_new_words_needed)
+            new_words = DB.retrieve_words_for_lesson(self.user_id, num_new_words_needed)
         else:
             new_words = set()
 

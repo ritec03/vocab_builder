@@ -1118,3 +1118,58 @@ class TestUserLessonData(unittest.TestCase):
                     retr_history.evaluation_result, history.evaluation_result
                 )
                 self.assertEqual(retr_history.task.id, history.task.id)
+
+class TestRetrieveWordsForLesson(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(TEST_DB_FILE):
+            os.remove(TEST_DB_FILE)
+        self.db_manager = DatabaseManager(TEST_DB_FILE)
+        self.user_id = self.db_manager.insert_user("user1")
+        words = [
+            ("apple", "NOUN", 50), ("quickly", "ADV", 30), ("happy", "ADJ", 40),
+            ("run", "VERB", 60), ("blue", "ADJ", 20)
+        ]
+        self.word_ids = self.db_manager.add_words_to_db(words)
+        # Assume 'apple' and 'happy' get scores for the user
+        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[0], 7)) # apple 
+        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[2], 8)) # happy
+
+    def test_successful_retrieval(self):
+        retrieved_words = self.db_manager.retrieve_words_for_lesson(self.user_id, 2)
+        # Should retrieve 'run' and 'blue' as they are the highest frequency eligible words
+        expected_words = {LexicalItem("run", "VERB", 60, 4), LexicalItem("blue", "ADJ", 20, 5)}
+        self.assertEqual(retrieved_words, expected_words)
+
+    def test_nonexistent_user(self):
+        with self.assertRaises(ValueDoesNotExistInDB):
+            self.db_manager.retrieve_words_for_lesson(9999, 2)  # Assuming 9999 does not exist
+
+    def test_empty_result_set(self):
+        # User scored on all words
+        for word_id in self.word_ids:
+            self.db_manager.add_word_score(self.user_id, Score(word_id, 5))
+        retrieved_words = self.db_manager.retrieve_words_for_lesson(self.user_id, 2)
+        self.assertEqual(len(retrieved_words), 0)
+
+    def test_partial_word_retrieval_due_to_scores(self):
+        # Adding additional words
+        additional_words = [
+            ("tree", "NOUN", 45), ("bright", "ADJ", 35), ("write", "VERB", 25)
+        ]
+        additional_word_ids = self.db_manager.add_words_to_db(additional_words)
+        # Assume 'tree' and 'bright' get scores for the user
+        self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[0], 6)) # tree 
+        self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[1], 9)) # bright
+
+        # The user now has scores for 'apple', 'happy', 'tree', and 'bright'.
+        # Remaining without scores are 'quickly', 'run', 'blue', 'write'.
+        # Requesting 4 words, but only 3 are eligible (quickly is an adv).
+        retrieved_words = self.db_manager.retrieve_words_for_lesson(self.user_id, 4)
+        
+        expected_words = {
+            LexicalItem("run", "VERB", 60, 4),
+            LexicalItem("blue", "ADJ", 20, 5),
+            LexicalItem("write", "VERB", 25, 8)
+        }
+        self.assertEqual(set(retrieved_words), expected_words)
+        self.assertEqual(len(retrieved_words), 3)  # Only three words should be returned

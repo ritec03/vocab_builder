@@ -78,6 +78,7 @@ class DatabaseManager:
 
     def add_words_to_db(self, word_list: List[Tuple[str, str, int]]) -> List[int]:
         """
+        # TODO change the return type to dict
         Insert tuples of (word, part-of-speech, frequency) into words table.
         If a combination of (word, pos) already exists in the database,
         only the freq count is updated.
@@ -332,6 +333,7 @@ class DatabaseManager:
     """
 
     def convert_template_obj(self, template_obj: TemplateDBObj) -> TaskTemplate:
+        # TODO check that db functions return objects with id.
         parameters = {}
         for param in template_obj.parameters:
             parameters[param.name] = param.description
@@ -344,6 +346,7 @@ class DatabaseManager:
             template_examples=json.loads(template_obj.examples),
             parameter_description=parameters,
             task_type=template_obj.task_type,
+            template_id=template_obj.id
         )
         return template
 
@@ -974,8 +977,33 @@ class DatabaseManager:
         NOUN, ADJ or VERB.
         Raises ValueDoesNotExistInDB if user does not exist.
         """
-        pass
+        with self.Session.begin() as session:
+            # Check if the user exists
+            if not session.get(UserDBObj, user_id):
+                raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
 
+            # Get IDs of words that the user has already scored
+            user_scores = self.retrieve_user_scores(user_id)
+
+            # Retrieve words that are not scored by the user and match the POS criteria
+            eligible_words_query = select(WordDBObj).where(
+                and_(
+                    WordDBObj.id.notin_(list(user_scores.keys())),
+                    WordDBObj.pos.in_(['NOUN', 'ADJ', 'VERB'])
+                )
+            ).order_by(WordDBObj.freq.desc()).limit(word_num)
+
+            # Execute the query
+            eligible_words = session.scalars(eligible_words_query).all()
+
+            # Convert WordDBObj to LexicalItem and return
+            return {
+                LexicalItem(item=word_obj.word, pos=word_obj.pos, freq=word_obj.freq, id=word_obj.id)
+                for word_obj in eligible_words
+            }
+
+TEST_DB_FILE = "test_database.db"
+DB = DatabaseManager(TEST_DB_FILE)
 
 if __name__ == "__main__":
     word_freq_output_file_path = "word_freq.txt"
@@ -991,5 +1019,3 @@ if __name__ == "__main__":
     db.add_words_to_db(list_of_tuples)
     word = db.get_word_by_id(1)
     print(word)
-
-    db.session.close()

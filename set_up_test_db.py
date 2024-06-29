@@ -3,9 +3,9 @@ from typing import List, Dict, Tuple
 
 import pandas as pd
 from data_structures import TaskType, Language
-from database import DB
 from exercise import LessonGenerator
 from task_template import TaskTemplate
+from database_orm import DB, DatabaseManager
 
 # Assume TaskTemplate class is defined as provided earlier
 
@@ -65,8 +65,6 @@ def write_template_json(template: TaskTemplate, file_path: str):
 # Example usage
 if __name__ == "__main__":
     templates = read_templates_from_json("templates.json")
-    
-    DB.create_db()
     word_freq_output_file_path = "word_freq.txt"
     word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
     filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
@@ -83,7 +81,7 @@ if __name__ == "__main__":
     print(user_id)
     user_id = 1
 
-    lesson_generator = LessonGenerator(user_id ,DB)
+    lesson_generator = LessonGenerator(user_id)
     lesson = lesson_generator.generate_lesson()
     # create a test for lesson iteration
     lesson.perform_lesson()
