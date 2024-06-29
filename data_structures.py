@@ -27,6 +27,11 @@ class TaskType(Enum):
     ONE_WAY_TRANSLATION = 1
     FOUR_CHOICE = 2
 
+@dataclass(frozen=True)
+class User():
+    id: int
+    user_name: str
+
 # need frozen to be able to use with sets and to ensure that it does not change
 @dataclass(frozen=True)
 class Score():

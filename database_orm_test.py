@@ -5,13 +5,8 @@ import unittest
 import sqlite3
 
 from sqlalchemy import select
-from data_structures import Language, LexicalItem, Resource, Score, TaskType
-from database import (
-    MAX_SCORE,
-    MAX_USER_NAME_LENGTH,
-    MIN_SCORE,
-    SCHEMA_PATH,
-)
+from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, Language, LexicalItem, Resource, Score, TaskType
+
 from database_orm import DatabaseManager, InvalidDelete, LearningDataDBObj, ResourceDBObj, ResourceWordDBObj, TaskDBObj, TaskResourceDBObj, TaskTargetWordDBObj, UserLessonDBObj, WordDBObj, ValueDoesNotExistInDB
 import os
 
@@ -32,7 +27,6 @@ class TestDatabaseFunctions(unittest.TestCase):
 
     def tearDown(self):
         # Close the database connection and delete the test database file
-        self.db_manager.close()
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
 
@@ -132,10 +126,11 @@ class TestDatabaseFunctions(unittest.TestCase):
         word = self.db_manager.get_word_by_id(word_ids[0])
         self.assertEqual(word.freq, 10)  # Check that the frequency remains 10
         # Assert that no new rows are added
-        all_words = self.db_manager.session.execute(
-            select(WordDBObj)
-        ).all()  # TODO remove sqlalchemy code
-        self.assertEqual(len(all_words), 1)  # Ensure only one word entry exists
+        with self.db_manager.Session.begin() as session:
+            all_words = session.execute(
+                select(WordDBObj)
+            ).all()  # TODO remove sqlalchemy code
+            self.assertEqual(len(all_words), 1)  # Ensure only one word entry exists
 
     def test_add_word_score_update_existing(self):
         # Test adding a word score
@@ -168,13 +163,14 @@ class TestDatabaseFunctions(unittest.TestCase):
         self.db_manager.add_word_score(user_id, Score(word_id, score_value))
 
         # Assert that the word score is added successfully
-        entry = self.db_manager.session.execute(
-            select(LearningDataDBObj).where(
-                LearningDataDBObj.user_id == user_id,
-                LearningDataDBObj.word_id == word_id,
-            )
-        ).scalar()
-        self.assertEqual(entry.score, score_value)  # Check that the score is 8
+        with self.db_manager.Session.begin() as session:
+            entry = session.execute(
+                select(LearningDataDBObj).where(
+                    LearningDataDBObj.user_id == user_id,
+                    LearningDataDBObj.word_id == word_id,
+                )
+            ).scalar()
+            self.assertEqual(entry.score, score_value)  # Check that the score is 8
 
     def test_add_word_score_nonexistent_user(self):
         word_list = [("cat", "NOUN", 10)]
@@ -235,7 +231,6 @@ class TestUpdateUserScores(unittest.TestCase):
 
     def tearDown(self):
         # Close the database session and delete the test database file
-        self.db_manager.close()
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
 
@@ -317,7 +312,6 @@ class TestRetrieveUserScores(unittest.TestCase):
 
     def tearDown(self):
         # Close the database session and delete the test database file
-        self.db_manager.close()
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
 
@@ -386,7 +380,6 @@ class TestTemplates(unittest.TestCase):
 
     def tearDown(self):
         # Close the database session and delete the test database file
-        self.db_manager.close()
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
 
@@ -531,7 +524,6 @@ class TestResources(unittest.TestCase):
 
     def tearDown(self):
         # Close the database session and delete the test database file
-        self.db_manager.close()
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
 
@@ -589,18 +581,18 @@ class TestResources(unittest.TestCase):
         self.db_manager.remove_resource(resource1.resource_id)
 
         # check
-        resources = self.db_manager.session.scalars(select(ResourceDBObj)).all()
-        self.assertEqual(len(resources), 1)
+        with self.db_manager.Session.begin() as session:
+            resources = session.scalars(select(ResourceDBObj)).all()
+            self.assertEqual(len(resources), 1)
 
-        removed_resource = self.db_manager.get_resource_by_id(resource1.resource_id)
-        self.assertEqual(removed_resource, None)
+            removed_resource = self.db_manager.get_resource_by_id(resource1.resource_id)
+            self.assertEqual(removed_resource, None)
 
-        # assert there are no resource words associated with removed resource
-
-        remaining_resource_words = self.db_manager.session.scalars(
-            select(ResourceWordDBObj).where(ResourceWordDBObj.resource_id == resource1.resource_id)
-        ).all()
-        self.assertEqual(len(remaining_resource_words), 0, "No resource words should remain for the deleted resource")
+            # assert there are no resource words associated with removed resource
+            remaining_resource_words = session.scalars(
+                select(ResourceWordDBObj).where(ResourceWordDBObj.resource_id == resource1.resource_id)
+            ).all()
+            self.assertEqual(len(remaining_resource_words), 0, "No resource words should remain for the deleted resource")
 
     def test_remove_resource_with_associated_tasks(self):
         # add two resources
@@ -707,7 +699,6 @@ class TestTasks(unittest.TestCase):
 
     def tearDown(self):
         # Close the database session and delete the test database file
-        self.db_manager.close()
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
 
@@ -932,46 +923,47 @@ class TestTasks(unittest.TestCase):
             answer="Extended",
         )
 
-        num_of_tasks = len(self.db_manager.session.scalars(select(TaskDBObj)).all())
-        self.assertEqual(num_of_tasks, 2)
+        with self.db_manager.Session.begin() as session:
+            num_of_tasks = len(session.scalars(select(TaskDBObj)).all())
+            self.assertEqual(num_of_tasks, 2)
 
-        # remove one
-        self.db_manager.remove_task(task2.id)
-        # check
+            # remove one
+            self.db_manager.remove_task(task2.id)
+            # check
 
-        with self.assertRaises(ValueDoesNotExistInDB):
-            retrieved_task = self.db_manager.get_task_by_id(task2.id)
-        
-        # Ensure that no target words or resources are linked to the deleted task
-        remaining_task_target_words = self.db_manager.session.scalars(
-            select(TaskTargetWordDBObj).where(TaskTargetWordDBObj.task_id == task2.id)
-        ).all()
-        self.assertEqual(len(remaining_task_target_words), 0, "No target words should remain for the deleted task")
+            with self.assertRaises(ValueDoesNotExistInDB):
+                retrieved_task = self.db_manager.get_task_by_id(task2.id)
+            
+            # Ensure that no target words or resources are linked to the deleted task
+            remaining_task_target_words = session.scalars(
+                select(TaskTargetWordDBObj).where(TaskTargetWordDBObj.task_id == task2.id)
+            ).all()
+            self.assertEqual(len(remaining_task_target_words), 0, "No target words should remain for the deleted task")
 
-        remaining_task_resources = self.db_manager.session.scalars(
-            select(TaskResourceDBObj).where(TaskResourceDBObj.task_id == task2.id)
-        ).all()
-        self.assertEqual(len(remaining_task_resources), 0, "No resources should remain for the deleted task")
+            remaining_task_resources = session.scalars(
+                select(TaskResourceDBObj).where(TaskResourceDBObj.task_id == task2.id)
+            ).all()
+            self.assertEqual(len(remaining_task_resources), 0, "No resources should remain for the deleted task")
 
-        num_of_tasks = len(self.db_manager.session.scalars(select(TaskDBObj)).all())
-        self.assertEqual(num_of_tasks, 1)
+            num_of_tasks = len(session.scalars(select(TaskDBObj)).all())
+            self.assertEqual(num_of_tasks, 1)
 
-        # 
-        retrieved_task = self.db_manager.get_task_by_id(task1.id)
+            # 
+            retrieved_task = self.db_manager.get_task_by_id(task1.id)
 
-        # Check that the retrieved task matches the added task
-        self.assertEqual(retrieved_task.id, task1.id)
-        self.assertEqual(retrieved_task.template.id, task1.template.id)
-        self.assertEqual(retrieved_task.correctAnswer, task1.correctAnswer)
+            # Check that the retrieved task matches the added task
+            self.assertEqual(retrieved_task.id, task1.id)
+            self.assertEqual(retrieved_task.template.id, task1.template.id)
+            self.assertEqual(retrieved_task.correctAnswer, task1.correctAnswer)
 
-        # Check the resources and target words are correctly associated
-        self.assertEqual(
-            set(retrieved_task.resources.keys()), set(self.resources.keys())
-        )
-        self.assertEqual(
-            set(lexical_item.id for lexical_item in retrieved_task.learning_items),
-            set(word.id for word in task1.learning_items),
-        )
+            # Check the resources and target words are correctly associated
+            self.assertEqual(
+                set(retrieved_task.resources.keys()), set(self.resources.keys())
+            )
+            self.assertEqual(
+                set(lexical_item.id for lexical_item in retrieved_task.learning_items),
+                set(word.id for word in task1.learning_items),
+            )
         
     def test_remove_task_lessons(self):
         task1 = self.create_example_task("task1-r1", "task1-r2")
@@ -1037,7 +1029,6 @@ class TestUserLessonData(unittest.TestCase):
 
     def tearDown(self):
         # Close the database connection and remove the test database file
-        self.db_manager.close()
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
 
@@ -1072,12 +1063,13 @@ class TestUserLessonData(unittest.TestCase):
         if not previous_lesson_data:
             self.fail()
 
-        lesson_number = len(
-            self.db_manager.session.scalars(
-                select(UserLessonDBObj).where(UserLessonDBObj.id == self.user_id)
-            ).all()
-        )
-        self.assertEqual(lesson_number, 1)
+        with self.db_manager.Session.begin() as session:
+            lesson_number = len(
+                session.scalars(
+                    select(UserLessonDBObj).where(UserLessonDBObj.id == self.user_id)
+                ).all()
+            )
+            self.assertEqual(lesson_number, 1)
 
         # Check evaluations
         self.assertEqual(len(previous_lesson_data), len(lesson_data))
