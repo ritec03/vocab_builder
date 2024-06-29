@@ -14,6 +14,9 @@ from data_structures import (
 from database_orm import (
     DatabaseManager,
     InvalidDelete,
+    ValueDoesNotExistInDB,
+)
+from database_objects import (
     LearningDataDBObj,
     ResourceDBObj,
     ResourceWordDBObj,
@@ -22,7 +25,6 @@ from database_orm import (
     TaskTargetWordDBObj,
     UserLessonDBObj,
     WordDBObj,
-    ValueDoesNotExistInDB,
 )
 import os
 
