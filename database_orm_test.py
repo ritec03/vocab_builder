@@ -1,17 +1,33 @@
-import copy
-import json
-from typing import Dict
 import unittest
-import sqlite3
 
 from sqlalchemy import select
-from data_structures import MAX_SCORE, MAX_USER_NAME_LENGTH, MIN_SCORE, Language, LexicalItem, Resource, Score, TaskType
+from data_structures import (
+    MAX_SCORE,
+    MAX_USER_NAME_LENGTH,
+    MIN_SCORE,
+    Language,
+    LexicalItem,
+    Score,
+    TaskType,
+)
 
-from database_orm import DatabaseManager, InvalidDelete, LearningDataDBObj, ResourceDBObj, ResourceWordDBObj, TaskDBObj, TaskResourceDBObj, TaskTargetWordDBObj, UserLessonDBObj, WordDBObj, ValueDoesNotExistInDB
+from database_orm import (
+    DatabaseManager,
+    InvalidDelete,
+    LearningDataDBObj,
+    ResourceDBObj,
+    ResourceWordDBObj,
+    TaskDBObj,
+    TaskResourceDBObj,
+    TaskTargetWordDBObj,
+    UserLessonDBObj,
+    WordDBObj,
+    ValueDoesNotExistInDB,
+)
 import os
 
-from task import OneWayTranslaitonTask, Task, get_task_type_class
-from evaluation import Evaluation, HistoryEntry
+from task import get_task_type_class
+from evaluation import Evaluation
 from task_template import TaskTemplate
 
 # Define a test database file path
@@ -590,9 +606,15 @@ class TestResources(unittest.TestCase):
 
             # assert there are no resource words associated with removed resource
             remaining_resource_words = session.scalars(
-                select(ResourceWordDBObj).where(ResourceWordDBObj.resource_id == resource1.resource_id)
+                select(ResourceWordDBObj).where(
+                    ResourceWordDBObj.resource_id == resource1.resource_id
+                )
             ).all()
-            self.assertEqual(len(remaining_resource_words), 0, "No resource words should remain for the deleted resource")
+            self.assertEqual(
+                len(remaining_resource_words),
+                0,
+                "No resource words should remain for the deleted resource",
+            )
 
     def test_remove_resource_with_associated_tasks(self):
         # add two resources
@@ -621,7 +643,6 @@ class TestResources(unittest.TestCase):
         # remove a resource
         with self.assertRaises(InvalidDelete):
             self.db_manager.remove_resource(resource1.resource_id)
-
 
 
 class TestTasks(unittest.TestCase):
@@ -933,22 +954,32 @@ class TestTasks(unittest.TestCase):
 
             with self.assertRaises(ValueDoesNotExistInDB):
                 retrieved_task = self.db_manager.get_task_by_id(task2.id)
-            
+
             # Ensure that no target words or resources are linked to the deleted task
             remaining_task_target_words = session.scalars(
-                select(TaskTargetWordDBObj).where(TaskTargetWordDBObj.task_id == task2.id)
+                select(TaskTargetWordDBObj).where(
+                    TaskTargetWordDBObj.task_id == task2.id
+                )
             ).all()
-            self.assertEqual(len(remaining_task_target_words), 0, "No target words should remain for the deleted task")
+            self.assertEqual(
+                len(remaining_task_target_words),
+                0,
+                "No target words should remain for the deleted task",
+            )
 
             remaining_task_resources = session.scalars(
                 select(TaskResourceDBObj).where(TaskResourceDBObj.task_id == task2.id)
             ).all()
-            self.assertEqual(len(remaining_task_resources), 0, "No resources should remain for the deleted task")
+            self.assertEqual(
+                len(remaining_task_resources),
+                0,
+                "No resources should remain for the deleted task",
+            )
 
             num_of_tasks = len(session.scalars(select(TaskDBObj)).all())
             self.assertEqual(num_of_tasks, 1)
 
-            # 
+            #
             retrieved_task = self.db_manager.get_task_by_id(task1.id)
 
             # Check that the retrieved task matches the added task
@@ -964,7 +995,7 @@ class TestTasks(unittest.TestCase):
                 set(lexical_item.id for lexical_item in retrieved_task.learning_items),
                 set(word.id for word in task1.learning_items),
             )
-        
+
     def test_remove_task_lessons(self):
         task1 = self.create_example_task("task1-r1", "task1-r2")
         task2 = self.create_example_task("task2-r1", "task2-r2")
@@ -982,7 +1013,6 @@ class TestTasks(unittest.TestCase):
 
         with self.assertRaises(InvalidDelete):
             self.db_manager.remove_task(task1.id)
-
 
 
 class TestUserLessonData(unittest.TestCase):

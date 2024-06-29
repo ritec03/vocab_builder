@@ -2,18 +2,29 @@ from datetime import datetime
 import json
 from typing import Dict, List, Optional, Set, Tuple
 import pandas as pd
-from sqlalchemy import CheckConstraint, ForeignKey, UniqueConstraint, and_, update
-from sqlalchemy import Enum
-from sqlalchemy import func
-from sqlalchemy import Integer
-from sqlalchemy import String
-from sqlalchemy import JSON
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.orm import Mapped
-from sqlalchemy.orm import mapped_column
-from sqlalchemy.orm import relationship
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    UniqueConstraint,
+    and_,
+    Enum,
+    func,
+    Integer,
+    JSON,
+    create_engine,
+    select,
+    TIMESTAMP,
+    event,
+)
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+    sessionmaker,
+)
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from data_structures import (
     MAX_USER_NAME_LENGTH,
     Language,
@@ -26,28 +37,27 @@ from data_structures import (
     MIN_SCORE,
     User,
 )
-from sqlalchemy.orm import Session
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import TIMESTAMP
-from sqlalchemy.engine import Engine
-from sqlalchemy import event
+
 from evaluation import Evaluation, HistoryEntry
-from task import FourChoiceTask, OneWayTranslaitonTask, Task, get_task_type_class
+from task import Task, get_task_type_class
 from task_template import TaskTemplate
+
 
 class ValueDoesNotExistInDB(LookupError):
     """
     Error is thrown when a value queries in the database
     does not exist (eg. user_name or word_id)
     """
+
     pass
+
 
 class InvalidDelete(Exception):
     """
     Error is thrown when deletion of an object from the DB
     fails due to associations with other existing objects.
     """
+
     pass
 
 
@@ -125,11 +135,12 @@ class ResourceDBObj(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     resource_text: Mapped[str]
     words = relationship(
-        "ResourceWordDBObj", 
+        "ResourceWordDBObj",
         back_populates="resources",
         passive_deletes=True,
-        cascade="all, delete"
+        cascade="all, delete",
     )
+
 
 class ResourceWordDBObj(Base):
     __tablename__ = "resource_words"
@@ -150,14 +161,10 @@ class TaskDBObj(Base):
     template_id = mapped_column(ForeignKey("templates.id"))
     answer: Mapped[str]
     target_words: Mapped[List["TaskTargetWordDBObj"]] = relationship(
-        "TaskTargetWordDBObj",
-        passive_deletes=True,
-        cascade="all, delete"
+        "TaskTargetWordDBObj", passive_deletes=True, cascade="all, delete"
     )
     resources: Mapped[List["TaskResourceDBObj"]] = relationship(
-        "TaskResourceDBObj",
-        passive_deletes=True,
-        cascade="all, delete"
+        "TaskResourceDBObj", passive_deletes=True, cascade="all, delete"
     )
     template: Mapped["TemplateDBObj"] = relationship("TemplateDBObj")
 
@@ -353,7 +360,7 @@ class DatabaseManager:
             UserDBObj: user database object
             None if no user is found
         """
-        with self.Session.begin() as session:        
+        with self.Session.begin() as session:
             statement = select(UserDBObj).where(UserDBObj.id == user_id)
             rows = session.scalars(statement).all()
             if len(rows) == 0:
@@ -377,7 +384,7 @@ class DatabaseManager:
         Raises:
             ValueDoesNotExistInDB if the user with user_id does not exist
         """
-        with self.Session.begin() as session:        
+        with self.Session.begin() as session:
             user = session.get(UserDBObj, user_id)
             if not user:
                 raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
@@ -397,9 +404,11 @@ class DatabaseManager:
             word_id (int): ID of the word.
             score (int): Score to add (MIN_SCORE and MAX_SCORE).
         """
-        with self.Session.begin() as session:        
+        with self.Session.begin() as session:
             if not MIN_SCORE <= score.score <= MAX_SCORE:
-                raise ValueError(f"Score should be between {MIN_SCORE} and {MAX_SCORE}.")
+                raise ValueError(
+                    f"Score should be between {MIN_SCORE} and {MAX_SCORE}."
+                )
 
             # Check if score exists, update if yes, else create new
             entry = session.execute(
@@ -423,7 +432,7 @@ class DatabaseManager:
                     raise ValueDoesNotExistInDB("User or word id invalid.")
 
     def get_score(self, user_id, word_id):
-        with self.Session.begin() as session:        
+        with self.Session.begin() as session:
             entry = session.execute(
                 select(LearningDataDBObj).where(
                     LearningDataDBObj.user_id == user_id,
@@ -440,7 +449,7 @@ class DatabaseManager:
         If non existent user - raise ValueDoesNotExistInDB
         If ther eis a word or words that are not in db - raise ValueDoesNotExistInDB
         """
-        with self.Session.begin() as session:        
+        with self.Session.begin() as session:
             # Verify user exists
             user = session.get(UserDBObj, user_id)
             if not user:
@@ -475,7 +484,7 @@ class DatabaseManager:
         and returns them as a dictionary with keys of word ids and values of scores.
         Raises ValueDoesNotExistInDB error if non-existent user is requested.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             # First, check if the user exists in the database
             if not session.get(UserDBObj, user_id):
                 raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
@@ -518,7 +527,7 @@ class DatabaseManager:
         Adds template to database and returns the new template id.
         If a template with the same template_string exist, return value error.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             template_obj = TemplateDBObj(
                 task_type=template.task_type,
                 template=template.get_template_string(),
@@ -562,7 +571,7 @@ class DatabaseManager:
         Returns:
             Optional[TaskTemplate]: The retrieved template, or None if not found.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             stmt = select(TemplateDBObj).where(TemplateDBObj.id == template_id)
             rows = session.scalars(stmt).all()
             if len(rows) == 0:
@@ -585,7 +594,7 @@ class DatabaseManager:
             dict: A dictionary mapping parameter names to descriptions.
             None if no parameters found
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             stmt = select(TemplateParameterDBObj).where(
                 TemplateParameterDBObj.template_id == template_id
             )
@@ -607,7 +616,7 @@ class DatabaseManager:
         Returns:
             List[TaskTemplate]: A list of templates matching the task type, or an empty list if none found.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             stmt = select(TemplateDBObj).where(TemplateDBObj.task_type == task_type)
             try:
                 rows = session.scalars(stmt).all()
@@ -634,7 +643,7 @@ class DatabaseManager:
         Returns:
             Resource: The added resource object.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             resource_obj = ResourceDBObj(resource_text=resource_str)
 
             for target_word in target_words:
@@ -668,14 +677,20 @@ class DatabaseManager:
         Removes resource if there are no associated tasks with it.
         Raise InvalidDelete if there are associated tasks.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             # Retrieve the resource to be deleted
             resource_to_remove = session.get(ResourceDBObj, resource_id)
             if not resource_to_remove:
-                raise ValueDoesNotExistInDB(f"Resource with ID {resource_id} does not exist.")
-            
+                raise ValueDoesNotExistInDB(
+                    f"Resource with ID {resource_id} does not exist."
+                )
+
             # check if there are tasks associated with the resource
-            tasks = session.scalars(select(TaskResourceDBObj).where(TaskResourceDBObj.resource_id == resource_id)).first()
+            tasks = session.scalars(
+                select(TaskResourceDBObj).where(
+                    TaskResourceDBObj.resource_id == resource_id
+                )
+            ).first()
             if tasks:
                 raise InvalidDelete("There are tasks associated with this resource.")
 
@@ -683,7 +698,7 @@ class DatabaseManager:
             session.delete(resource_to_remove)
 
     def get_resource_by_id(self, resource_id: int) -> Resource:
-        with self.Session.begin() as session:                 
+        with self.Session.begin() as session:
             stmt = select(ResourceDBObj).where(ResourceDBObj.id == resource_id)
             rows = session.scalars(stmt).all()
             if len(rows) == 0:
@@ -705,7 +720,7 @@ class DatabaseManager:
         Raises:
             ValueDoesNotExistInDB error if target word is not in DB.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             stmt = select(ResourceDBObj).where(
                 ResourceDBObj.words.any(ResourceWordDBObj.word_id == target_word.id)
             )
@@ -744,7 +759,7 @@ class DatabaseManager:
         Returns:
             Task: The added task object.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             # TODO check that resources contain target words ???
             try:
                 task_obj = TaskDBObj(template_id=template_id, answer=answer)
@@ -790,7 +805,7 @@ class DatabaseManager:
         Retrieves a task by id along with its associated template, resources,
         and template parameters, then constructs a Task object.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             # Load the task along with its associated template, resources, and target words
             task_obj = session.scalars(
                 select(TaskDBObj).where(TaskDBObj.id == task_id)
@@ -838,7 +853,7 @@ class DatabaseManager:
         Return task of the task_type. Returns at most 100 tasks unless otherwise specified.
         Raise ValueError if invalid task type.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             if not isinstance(task_type, TaskType):
                 raise ValueError(f"Invalid task type provided: {task_type}")
 
@@ -894,7 +909,7 @@ class DatabaseManager:
         Return tasks that are based on the specified template ID.
         Returns at most 'number' tasks unless otherwise specified.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             # Query for tasks associated with the specified template ID
             tasks_query = (
                 session.query(TaskDBObj)
@@ -948,7 +963,7 @@ class DatabaseManager:
         Return tasks whose task.target_words is a superset of the target_words.
         Returns at most 100 tasks unless otherwise specified.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             # Extract IDs from LexicalItem set for comparison
             target_word_ids = {word.id for word in target_words}
 
@@ -1012,16 +1027,20 @@ class DatabaseManager:
         Removes task from tasks and task_resources tables.
         Raises error if there are any lessons associated with that task.
         """
-        with self.Session.begin() as session:                   
+        with self.Session.begin() as session:
             # Retrieve the task to be deleted
             task_to_remove = session.get(TaskDBObj, task_id)
             if not task_to_remove:
                 raise ValueDoesNotExistInDB(f"Task with ID {task_id} does not exist.")
-            
+
             # check if there are lessons
-            history_entires = session.scalars(select(HistoryEntrieDBObj).where(HistoryEntrieDBObj.task_id == task_id)).first()
+            history_entires = session.scalars(
+                select(HistoryEntrieDBObj).where(HistoryEntrieDBObj.task_id == task_id)
+            ).first()
             if history_entires:
-                raise InvalidDelete("There are history entries associated with this task.")
+                raise InvalidDelete(
+                    "There are history entries associated with this task."
+                )
 
             # Delete the task itself
             session.delete(task_to_remove)
@@ -1035,7 +1054,7 @@ class DatabaseManager:
         into the history entries in order, with received scores going to entry_scores table
         Raises ValueDoesNotExistInDB if user does not exist.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             if not session.get(UserDBObj, user_id):
                 raise ValueDoesNotExistInDB("User does not exist.")
 
@@ -1045,7 +1064,9 @@ class DatabaseManager:
             for eval_index, evaluation in enumerate(lesson_data, start=1):
                 new_evaluation = EvaluationDBObj(sequence_number=eval_index)
 
-                for history_index, history_entry in enumerate(evaluation.history, start=1):
+                for history_index, history_entry in enumerate(
+                    evaluation.history, start=1
+                ):
                     new_history_entry = HistoryEntrieDBObj(
                         sequence_number=history_index,
                         task_id=history_entry.task.id,
@@ -1070,7 +1091,7 @@ class DatabaseManager:
         Returns None if the user has not completed any lessons.
         Raises ValueDoesNotExistInDB if user does not exist.
         """
-        with self.Session.begin() as session:                
+        with self.Session.begin() as session:
             # TODO what about correction field?
             if not session.get(UserDBObj, user_id):
                 raise ValueDoesNotExistInDB("User does not exist.")
