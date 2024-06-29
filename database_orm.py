@@ -246,10 +246,6 @@ class DatabaseManager:
         engine = create_engine("sqlite:///" + db_path, echo=True)
         Base.metadata.create_all(engine)
         self.Session = sessionmaker(engine)
-        # self.session = Session(engine)
-
-    # def close(self):
-    #     self.session.close()
 
     def add_words_to_db(self, word_list: List[Tuple[str, str, int]]) -> List[int]:
         """
@@ -859,13 +855,14 @@ class DatabaseManager:
 
             # Query for tasks with the specified task type using a JOIN with the Template table
             tasks_query = (
-                session.query(TaskDBObj)
-                .join(TemplateDBObj)
-                .filter(TemplateDBObj.task_type == task_type.name)
+                select(TaskDBObj)
+                .join(TemplateDBObj, TaskDBObj.template)
+                .where(TemplateDBObj.task_type == task_type.name)
                 .limit(number)
             )
 
-            tasks = tasks_query.all()
+            # Execute the query
+            tasks = session.scalars(tasks_query).all()
 
             # Convert TaskDBObj to Task instances
             result_tasks = []
@@ -912,12 +909,13 @@ class DatabaseManager:
         with self.Session.begin() as session:
             # Query for tasks associated with the specified template ID
             tasks_query = (
-                session.query(TaskDBObj)
-                .filter(TaskDBObj.template_id == template_id)
+                select(TaskDBObj)
+                .where(TaskDBObj.template_id == template_id)
                 .limit(number)
             )
 
-            tasks = tasks_query.all()
+            # Execute the query and fetch the results
+            tasks = session.scalars(tasks_query).all()
 
             # Convert TaskDBObj to Task instances
             result_tasks = []
@@ -969,21 +967,25 @@ class DatabaseManager:
 
             # Construct a subquery to filter tasks based on word presence
             task_ids_with_all_words = (
-                session.query(TaskDBObj.id)
+                select(TaskDBObj.id)
                 .join(TaskTargetWordDBObj, TaskDBObj.target_words)
                 .filter(TaskTargetWordDBObj.word_id.in_(target_word_ids))
                 .group_by(TaskDBObj.id)
                 .having(func.count(TaskDBObj.id) == len(target_word_ids))
             )
 
+            # Create a subquery for use in the main query
+            task_ids_subquery = task_ids_with_all_words.subquery()
+
             # Now query for tasks where task IDs are in the above subquery results
             tasks_query = (
-                session.query(TaskDBObj)
-                .filter(TaskDBObj.id.in_(task_ids_with_all_words.subquery()))
+                select(TaskDBObj)
+                .where(TaskDBObj.id.in_(task_ids_subquery))
                 .limit(number)
             )
 
-            tasks = tasks_query.all()
+            # To execute the query, assuming `session` is your SQLAlchemy Session object:
+            tasks = session.execute(tasks_query).scalars().all()
 
             # Convert TaskDBObj to Task instances
             result_tasks = []
@@ -1097,12 +1099,15 @@ class DatabaseManager:
                 raise ValueDoesNotExistInDB("User does not exist.")
 
             # Get the most recent lesson
-            recent_lesson = (
-                session.query(UserLessonDBObj)
-                .filter_by(user_id=user_id)
+            recent_lesson_query = (
+                select(UserLessonDBObj)
+                .where(UserLessonDBObj.user_id == user_id)
                 .order_by(UserLessonDBObj.timestamp.desc())
-                .first()
+                .limit(1)
             )
+
+            # Execute the query and fetch the first result
+            recent_lesson = session.scalars(recent_lesson_query).first()
 
             if not recent_lesson:
                 return None
