@@ -17,6 +17,11 @@ class FourChoiceAnswer(Enum):
     C = "C"
     D = "D"
 
+class CorrectionStrategy(Enum):
+    HintStrategy = "HintStrategy"
+    ExplanationStrategy = "ExplanationStrategy"
+    EquivalentTaskStrategy = "EquivalentTaskStrategy"
+
 @unique
 class Language(Enum):
     ENGLISH = 1

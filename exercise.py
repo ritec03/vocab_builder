@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Set, Tuple
-from data_structures import NUM_NEW_WORDS_PER_LESSON, NUM_WORDS_PER_LESSON, LexicalItem, Score
+from typing import List, Set, Tuple, Type
+from data_structures import NUM_NEW_WORDS_PER_LESSON, NUM_WORDS_PER_LESSON, CorrectionStrategy, LexicalItem, Score
 from database_orm import DB, DatabaseManager
 from evaluation import Evaluation
 from task import Task
@@ -46,6 +46,8 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
     This strategy produces a different task with the same template
     for the target words.
     """
+    # TODO strategy shouldn't run tasks but return them
+    # TODO there should be separate code that determines which target words failed
     def apply_correction(self, evaluation: Evaluation) -> Evaluation:
         # take last evaluation's task
         previous_task = evaluation.get_last_task()
@@ -71,36 +73,35 @@ class ExplanationStrategy(ErrorCorrectionStrategy):
         # Logic to provide an explanation for the correct answer
         pass
 
+def get_strategy_object(strategy_name: CorrectionStrategy) -> Type[ErrorCorrectionStrategy]:
+    if strategy_name == CorrectionStrategy.HintStrategy:
+        return HintStrategy
+    elif strategy_name == CorrectionStrategy.EquivalentTaskStrategy:
+        return EquivalentTaskStrategy
+    elif strategy_name == CorrectionStrategy.ExplanationStrategy:
+        return ExplanationStrategy
+    else:
+        raise ValueError("Invalid correction strategy name ", strategy_name)
+
 class ExerciseSequence:
-    def __init__(self, task: Task, strategies_sequence: List[str]):
+    """
+    This class represents an exercise centered around a single task.
+    An exercise may or may not require further exercises (corrections) depending
+    on the user answer. 
+    The criteria for passing or failing an exercise may be the word score.
+
+    """
+    def __init__(self, task: Task, strategies_sequence: List[CorrectionStrategy]):
         """
         Initializes an exercise sequence with a specific task and a predefined sequence of error correction strategies.
 
         :param task: The initial task to be presented to the user.
-        :param strategies_sequence: A list of strategy keys (e.g., ['hint', 'explanation']) defining the sequence of corrections.
+        :param strategies_sequence: A list of strategy keys defining the sequence of corrections.
         :param max_attempts: Maximum number of attempts (including the initial attempt) before the sequence is terminated.
         """
         self.task = task
         self.strategies_sequence = strategies_sequence
         self.attempt_count = 0
-
-    def get_strategy_object(self, strategy_key: str) -> ErrorCorrectionStrategy:
-        """
-        Factory method to get an instance of ErrorCorrectionStrategy based on a key.
-
-        :param strategy_key: The key identifying the strategy.
-        :return: An instance of a subclass of ErrorCorrectionStrategy.
-        """
-        strategy_map = {
-            'hint': HintStrategy,
-            'explanation': ExplanationStrategy,
-            'same_task': EquivalentTaskStrategy
-            # Additional strategies can be added here.
-        }
-        strategy_class = strategy_map.get(strategy_key)
-        if not strategy_class:
-            raise ValueError(f"Unknown strategy key: {strategy_key}")
-        return strategy_class()
 
     def perform_run(self, evaluation: Evaluation) -> Evaluation:
         """
@@ -120,7 +121,7 @@ class ExerciseSequence:
             words_to_retry = evaluation.get_last_low_scored_words()
             if len(words_to_retry) > 0:        
                 strategy_key = self.strategies_sequence[self.attempt_count]
-                strategy = self.get_strategy_object(strategy_key)
+                strategy = get_strategy_object(strategy_key)
                 evaluation = strategy.apply_correction(evaluation)
         elif self.attempt_count >= len(self.strategies_sequence):
             return evaluation
@@ -145,7 +146,7 @@ class ExerciseSequence:
     # or a generator that generates tasks
 
 class Lesson:
-    def __init__(self, user_id: int, words: Set[LexicalItem], lesson_plan: List[Tuple[Task, List[str]]]):
+    def __init__(self, user_id: int, words: Set[LexicalItem], lesson_plan: List[Tuple[Task, List[CorrectionStrategy]]]):
         """
         Initialize a lesson with a set of words to be learned, each associated with a sequence of error correction strategies.
 
@@ -160,7 +161,7 @@ class Lesson:
         self.evaluation_list: List[Evaluation] = []
         self.user_id = user_id
 
-    def perform_iteration(self, current_task_tuple: Tuple[Task, List[str]]):
+    def perform_iteration(self, current_task_tuple: Tuple[Task, List[CorrectionStrategy]]):
         """
         Performs a single iteration of exercise sequence for a word from the set.
         """
@@ -256,7 +257,11 @@ class LessonGenerator():
         # TODO think about how to do it.
         task_factory = TaskFactory()
         lesson_plan = []
-        strategy_sequence = ["same_task", "same_task", "same_task"]
+        strategy_sequence = [
+            CorrectionStrategy.EquivalentTaskStrategy, 
+            CorrectionStrategy.EquivalentTaskStrategy, 
+            CorrectionStrategy.EquivalentTaskStrategy
+        ]
         for word in list(words):
             task = task_factory.get_task_for_word({word})
             lesson_plan.append((task, strategy_sequence))
