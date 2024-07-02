@@ -22,10 +22,16 @@ from data_structures import (
 )
 
 class Base(DeclarativeBase):
+    """
+    Base class for all ORM models, making use of the automated mapper in SQLAlchemy.
+    """
     pass
 
 
 class UserDBObj(Base):
+    """
+    Represents a user in the system with a unique username.
+    """
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -34,6 +40,11 @@ class UserDBObj(Base):
 
 
 class WordDBObj(Base):
+    """
+    Represents words stored in the system, and including information
+    about part of speech and word frequency in the corpus.
+    Relates to resources that use this word.
+    """
     __tablename__ = "words"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -45,6 +56,9 @@ class WordDBObj(Base):
 
 
 class LearningDataDBObj(Base):
+    """
+    Stores user-specific scores for words.
+    """
     __tablename__ = "learning_data"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -56,6 +70,9 @@ class LearningDataDBObj(Base):
 
 
 class TemplateDBObj(Base):
+    """
+    Stores templates for tasks, including language settings and a list of parameters.
+    """
     __tablename__ = "templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -72,6 +89,11 @@ class TemplateDBObj(Base):
 
 
 class TemplateParameterDBObj(Base):
+    """
+    Stores parameters and their descirptions associated with templates, linked by template_id.
+    For example, template "translate this sentence $sentence", $sentence
+    is a parameter.
+    """
     __tablename__ = "template_parameters"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -83,6 +105,10 @@ class TemplateParameterDBObj(Base):
 
 
 class ResourceDBObj(Base):
+    """
+    Represents resources which are textual materials that can be linked to words
+    and used to fill in parameters in templates for tasks.
+    """
     __tablename__ = "resources"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -96,6 +122,9 @@ class ResourceDBObj(Base):
 
 
 class ResourceWordDBObj(Base):
+    """
+    Links words to their resources, allowing for many-to-many relationships.
+    """
     __tablename__ = "resource_words"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -108,6 +137,9 @@ class ResourceWordDBObj(Base):
 
 
 class TaskDBObj(Base):
+    """
+    Represents tasks linked to templates and resources that fill the templates.
+    """
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -123,6 +155,9 @@ class TaskDBObj(Base):
 
 
 class TaskTargetWordDBObj(Base):
+    """
+    Stores words targeted in specific tasks.
+    """
     __tablename__ = "task_target_words"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -132,6 +167,9 @@ class TaskTargetWordDBObj(Base):
 
 
 class TaskResourceDBObj(Base):
+    """
+    Links template parameters for a tasks to their resources.
+    """
     __tablename__ = "task_resources"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -145,6 +183,9 @@ class TaskResourceDBObj(Base):
 
 
 class UserLessonDBObj(Base):
+    """
+    Records lessons undertaken by users, storing when each lesson was taken.
+    """
     __tablename__ = "user_lessons"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -156,6 +197,10 @@ class UserLessonDBObj(Base):
 
 
 class EvaluationDBObj(Base):
+    """
+     Stores evaluations of user performances in lessons, conserving the sequence
+     of tasks and attempts.
+    """
     __tablename__ = "evaluations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -170,6 +215,9 @@ class EvaluationDBObj(Base):
 
 
 class HistoryEntrieDBObj(Base):
+    """
+    Keeps track of user responses and associated scores within evaluations.
+    """
     __tablename__ = "history_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -182,6 +230,9 @@ class HistoryEntrieDBObj(Base):
 
 
 class EntryScoreDBObj(Base):
+    """
+    Details the scores received by users for specific words within history entries.
+    """
     __tablename__ = "entry_scores"
 
     id: Mapped[int] = mapped_column(primary_key=True)
