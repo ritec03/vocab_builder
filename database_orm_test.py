@@ -35,19 +35,15 @@ from task_template import TaskTemplate
 # Define a test database file path
 TEST_DB_FILE = "test_database.db"
 
-
-class TestDatabaseFunctions(unittest.TestCase):
+class TestMixin:
     def setUp(self):
         # Ensure the test database does not exist before starting each test
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
         self.db_manager = DatabaseManager(TEST_DB_FILE)
 
-    def tearDown(self):
-        # Close the database connection and delete the test database file
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
-
+# TestMixin should be inherited first to preserve instance variables
+class TestDatabaseFunctions(TestMixin, unittest.TestCase):
     def test_insert_user(self):
         # Test inserting a new user
         user_id = self.db_manager.insert_user("test_user")
@@ -229,15 +225,9 @@ class TestDatabaseFunctions(unittest.TestCase):
             )  # Attempting to add a score above the maximum should raise an error
 
 
-class TestUpdateUserScores(unittest.TestCase):
+class TestUpdateUserScores(TestMixin, unittest.TestCase):
     def setUp(self):
-        # Ensure the test database does not exist before starting each test
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
-
-        # Initialize the database manager
-        self.db_manager = DatabaseManager(TEST_DB_FILE)
-
+        super().setUp()
         # Insert a test user and predefined words
         user_id = self.db_manager.insert_user("test_user")
         word_list = [("word1", "noun", 1), ("word2", "verb", 2), ("word3", "adj", 3)]
@@ -246,11 +236,6 @@ class TestUpdateUserScores(unittest.TestCase):
         # Store user_id and word_ids for use in tests
         self.user_id = user_id
         self.word_ids = word_ids
-
-    def tearDown(self):
-        # Close the database session and delete the test database file
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
 
     def test_update_user_scores_single_score_update(self):
         # Test adding a single score and updating it
@@ -308,13 +293,9 @@ class TestUpdateUserScores(unittest.TestCase):
             )  # Assuming 9999 is a non-existent user ID
 
 
-class TestRetrieveUserScores(unittest.TestCase):
+class TestRetrieveUserScores(TestMixin, unittest.TestCase):
     def setUp(self):
-        """
-        Set up the environment before each test.
-        """
-        self.db_manager = DatabaseManager(TEST_DB_FILE)
-
+        super().setUp()
         # Insert test data
         user_id = self.db_manager.insert_user("test_user")
         word_ids = self.db_manager.add_words_to_db(
@@ -327,11 +308,6 @@ class TestRetrieveUserScores(unittest.TestCase):
 
         self.user_id = user_id
         self.word_ids = word_ids
-
-    def tearDown(self):
-        # Close the database session and delete the test database file
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
 
     def test_user_with_scores(self):
         """
@@ -363,13 +339,9 @@ class TestRetrieveUserScores(unittest.TestCase):
             )  # Assuming 9999 is an ID that does not exist
 
 
-class TestTemplates(unittest.TestCase):
+class TestTemplates(TestMixin, unittest.TestCase):
     def setUp(self):
-        """
-        Set up the environment before each test.
-        """
-        self.db_manager = DatabaseManager(TEST_DB_FILE)
-
+        super().setUp()
         # Insert test data
         user_id = self.db_manager.insert_user("test_user")
         word_ids = self.db_manager.add_words_to_db(
@@ -395,11 +367,6 @@ class TestTemplates(unittest.TestCase):
             parameter_description=self.parameter_description,
             task_type=TaskType.ONE_WAY_TRANSLATION,
         )
-
-    def tearDown(self):
-        # Close the database session and delete the test database file
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
 
     def test_add_get_template(self):
         # add template
@@ -462,8 +429,8 @@ class TestTemplates(unittest.TestCase):
     #     with self.assertRaises(ValueError):
     #         self.db_manager.add_template(template_2)
 
-    def test_remove_template():
-        pass
+    def test_remove_template(self):
+        self.fail()
 
     def test_get_template_parameters(self):
         template_id = self.db_manager.add_template(self.template)
@@ -523,15 +490,9 @@ class TestTemplates(unittest.TestCase):
             templates_2 = self.db_manager.get_templates_by_task_type("blah")
 
 
-class TestResources(unittest.TestCase):
+class TestResources(TestMixin, unittest.TestCase):
     def setUp(self):
-        """
-        Set up the environment before each test.
-        """
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
-        self.db_manager = DatabaseManager(TEST_DB_FILE)
-
+        super().setUp()
         # Insert test data
         self.user_id = self.db_manager.insert_user("test_user")
         self.word_ids = self.db_manager.add_words_to_db(
@@ -539,11 +500,6 @@ class TestResources(unittest.TestCase):
         )
         self.word_1 = self.db_manager.get_word_by_id(1)
         self.word_2 = self.db_manager.get_word_by_id(2)
-
-    def tearDown(self):
-        # Close the database session and delete the test database file
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
 
     def test_add_get_resource_manual(self):
         resourse_str = "test resourse"
@@ -647,15 +603,9 @@ class TestResources(unittest.TestCase):
             self.db_manager.remove_resource(resource1.resource_id)
 
 
-class TestTasks(unittest.TestCase):
+class TestTasks(TestMixin, unittest.TestCase):
     def setUp(self):
-        """
-        Set up the environment before each test.
-        """
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
-        self.db_manager = DatabaseManager(TEST_DB_FILE)
-
+        super().setUp()
         # Insert test data
         self.user_id = self.db_manager.insert_user("test_user")
         self.word_ids = self.db_manager.add_words_to_db(
@@ -719,11 +669,6 @@ class TestTasks(unittest.TestCase):
             "D": self.resource2,
         }
         self.template2_id = self.db_manager.add_template(self.template2)
-
-    def tearDown(self):
-        # Close the database session and delete the test database file
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
 
     def test_add_and_get_task(self):
         """
@@ -1017,13 +962,9 @@ class TestTasks(unittest.TestCase):
             self.db_manager.remove_task(task1.id)
 
 
-class TestUserLessonData(unittest.TestCase):
+class TestUserLessonData(TestMixin, unittest.TestCase):
     def setUp(self):
-        # Initialize the database manager and create the test database
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
-        self.db_manager = DatabaseManager(TEST_DB_FILE)
-
+        super().setUp()
         # add user
         self.user_id = self.db_manager.insert_user("user1")
 
@@ -1119,11 +1060,9 @@ class TestUserLessonData(unittest.TestCase):
                 )
                 self.assertEqual(retr_history.task.id, history.task.id)
 
-class TestRetrieveWordsForLesson(unittest.TestCase):
+class TestRetrieveWordsForLesson(TestMixin, unittest.TestCase):
     def setUp(self):
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
-        self.db_manager = DatabaseManager(TEST_DB_FILE)
+        super().setUp()
         self.user_id = self.db_manager.insert_user("user1")
         words = [
             ("apple", "NOUN", 50), ("quickly", "ADV", 30), ("happy", "ADJ", 40),
