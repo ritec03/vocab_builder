@@ -5,6 +5,9 @@ import copy
 from data_structures import EXERCISE_THRESHOLD, FourChoiceAnswer, LexicalItem, Score, TaskType
 from evaluation_method import AIEvaluation, EvaluationMethod
 from task_template import Resource, TaskTemplate
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Task(ABC):
     def __init__(
@@ -96,8 +99,8 @@ class FourChoiceTask(Task):
             task_id: int
         ):
         # validate that answer is one of four options a, b, c or d.
-        print(resources)
-        print("The answer is ", answer)
+        logger.info(resources)
+        logger.info("The answer is %s", answer)
         if answer not in [a.name for a in list(FourChoiceAnswer)]:
             raise ValueError("Answer is not one of the FourChoiceAnswer options.")
 

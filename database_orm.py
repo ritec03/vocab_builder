@@ -44,7 +44,9 @@ from database_objects import (
 from evaluation import Evaluation, HistoryEntry
 from task import Task, get_task_type_class
 from task_template import TaskTemplate
+import logging
 
+logger = logging.getLogger(__name__)
 
 class ValueDoesNotExistInDB(LookupError):
     """
@@ -98,7 +100,6 @@ class DatabaseManager:
                 # check if combination of word-pos exist
                 try:
                     session.add(word_object)
-                    print("Error happens here")
                     session.flush()
                     word_ids.append(word_object.id)
                 except IntegrityError:
@@ -217,7 +218,7 @@ class DatabaseManager:
             else:
                 session.delete(user)
                 session.flush()
-                print(f"User with ID {user_id} removed successfully.")
+                logger.info(f"User with ID {user_id} removed successfully.")
 
     def add_word_score(self, user_id: int, score: Score):
         """
@@ -1004,18 +1005,3 @@ class DatabaseManager:
 
 TEST_DB_FILE = "test_database.db"
 DB = DatabaseManager(TEST_DB_FILE)
-
-if __name__ == "__main__":
-    word_freq_output_file_path = "word_freq.txt"
-    word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
-    filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
-    list_of_tuples: List[Tuple[str, str, int]] = list(
-        filtered_dataframe.to_records(index=False)
-    )
-    # convert numpy.int64 to Python integer
-    list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples]
-    db = DatabaseManager()
-
-    db.add_words_to_db(list_of_tuples)
-    word = db.get_word_by_id(1)
-    print(word)

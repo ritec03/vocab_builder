@@ -2,6 +2,9 @@ from abc import ABC, abstractmethod
 from data_structures import MAX_SCORE, MIN_SCORE, LexicalItem, Score
 from llm_chains import invoke_evaluation_chain
 from typing import Dict, Set, List
+import logging
+
+logger = logging.getLogger(__name__)
 
 class EvaluationMethod(ABC):
     """
@@ -48,7 +51,7 @@ class AIEvaluation(EvaluationMethod):
         """
         # invoke evaluation chain.
         output = invoke_evaluation_chain(self.context["task"], gold_standard, user_answer, target_words)
-        print(output)
+        logger.info(output)
         # Check that output is a dictionary that contains all words from target words as keys and
         # that all values are integers.
         if not isinstance(output, dict):

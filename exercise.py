@@ -6,6 +6,9 @@ from evaluation import Evaluation
 from task import Task
 from task_generator import TaskFactory
 from itertools import chain
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ErrorCorrectionStrategy(ABC):
     @abstractmethod
@@ -177,7 +180,7 @@ class Lesson:
         final_scores = [score for list_of_scores in final_eval_scores for score in list_of_scores]
         # save scores to db
         [DB.add_word_score(self.user_id, score) for score in final_scores]
-        print(final_scores)
+        logger.info(final_scores)
     
     def save_evaluations(self) -> None:
         """
@@ -214,7 +217,7 @@ class LessonGenerator():
         # retrieve user learning data
         # retrieve user lesson evaluation history
         user_word_scores = self.retrieve_user_data()
-        print(user_word_scores)
+        logger.info(user_word_scores)
         # choose target words
         target_words = self.choose_target_words(user_word_scores)
         # generate lesson plan
