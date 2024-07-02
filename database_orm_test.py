@@ -41,14 +41,20 @@ class TestMixin:
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
         self.db_manager = DatabaseManager(TEST_DB_FILE)
+        # Insert a test user and predefined words
+        self.words = [
+            ("apple", "NOUN", 50), ("quickly", "ADV", 30), ("happy", "ADJ", 40),
+            ("run", "VERB", 60), ("blue", "ADJ", 20)
+        ]
+        self.word_ids = self.db_manager.add_words_to_db(self.words)
+        self.user_id = self.db_manager.insert_user("test_user")
+
 
 # TestMixin should be inherited first to preserve instance variables
 class TestDatabaseFunctions(TestMixin, unittest.TestCase):
     def test_insert_user(self):
-        # Test inserting a new user
-        user_id = self.db_manager.insert_user("test_user")
         # Assert that the user is inserted successfully
-        user = self.db_manager.get_user_by_id(user_id)
+        user = self.db_manager.get_user_by_id(self.user_id)
         self.assertIsNotNone(user)  # Check that a row is returned
         self.assertEqual(
             user.user_name, "test_user"
@@ -56,7 +62,6 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
 
     def test_insert_duplicate_user(self):
         # Test inserting a user with the same user name (should fail)
-        self.db_manager.insert_user("test_user")
         with self.assertRaises(ValueError):
             self.db_manager.insert_user(
                 "test_user"
@@ -64,10 +69,9 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
 
     def test_remove_user_success(self):
         # Test removing an existing user
-        user_id = self.db_manager.insert_user("test_user")
-        self.db_manager.remove_user(user_id)
+        self.db_manager.remove_user(self.user_id)
         # Assert that the user is removed successfully
-        user = self.db_manager.get_user_by_id(user_id)
+        user = self.db_manager.get_user_by_id(self.user_id)
         self.assertIsNone(user)  # Check that no row is returned
 
     def test_remove_nonexistent_user(self):
@@ -129,26 +133,24 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
 
     def test_add_existing_word_entry(self):
         # Test adding an existing word/pos entry to the words table
-        word_list = [("cat", "NOUN", 10)]
-        self.db_manager.add_words_to_db(word_list)  # Add initial entry
-        word_list_duplicate = [("cat", "NOUN", 10)]
+        new_freq = self.words[0][2] + 10
+        word_pos_duplicate = [(self.words[0][0], self.words[0][1], new_freq)]
         word_ids = self.db_manager.add_words_to_db(
-            word_list_duplicate
+            word_pos_duplicate
         )  # Attempt to add the same entry again
 
-        # Assert that only one word exists and its frequency remains the same
+        # Assert that only one word exists and only its freq is updated
         word = self.db_manager.get_word_by_id(word_ids[0])
-        self.assertEqual(word.freq, 10)  # Check that the frequency remains 10
+        self.assertEqual(word.freq, new_freq)  # Check that the frequency remains 10
         # Assert that no new rows are added
         with self.db_manager.Session.begin() as session:
             all_words = session.execute(
                 select(WordDBObj)
             ).all()  # TODO remove sqlalchemy code
-            self.assertEqual(len(all_words), 1)  # Ensure only one word entry exists
+            self.assertEqual(len(all_words), len(self.word_ids))  # Ensure only one word entry exists
 
     def test_add_word_score_update_existing(self):
         # Test adding a word score
-        user_id = self.db_manager.insert_user("test_user")
         word_list = [("cat", "NOUN", 10)]
         word_ids = self.db_manager.add_words_to_db(word_list)
 
@@ -157,30 +159,29 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
         NEW_SCORE = 5
 
         # Add old score
-        self.db_manager.add_word_score(user_id, Score(word_id, OLD_SCORE))
+        self.db_manager.add_word_score(self.user_id, Score(word_id, OLD_SCORE))
         # Assert that the word score is added successfully
-        score = self.db_manager.get_score(user_id, word_id)
+        score = self.db_manager.get_score(self.user_id, word_id)
         self.assertEqual(score, OLD_SCORE)  # Check that the score is OLD_SCORE
 
         # Update the score
-        self.db_manager.add_word_score(user_id, Score(word_id, NEW_SCORE))
+        self.db_manager.add_word_score(self.user_id, Score(word_id, NEW_SCORE))
         # Assert that the score is updated
-        updated_score = self.db_manager.get_score(user_id, word_id)
+        updated_score = self.db_manager.get_score(self.user_id, word_id)
         self.assertEqual(updated_score, NEW_SCORE)  # Check that the score is NEW_SCORE
 
     def test_add_word_score(self):
-        user_id = self.db_manager.insert_user("test_user")
         word_list = [("cat", "NOUN", 10)]
         word_ids = self.db_manager.add_words_to_db(word_list)
         word_id = word_ids[0]
         score_value = 8
-        self.db_manager.add_word_score(user_id, Score(word_id, score_value))
+        self.db_manager.add_word_score(self.user_id, Score(word_id, score_value))
 
         # Assert that the word score is added successfully
         with self.db_manager.Session.begin() as session:
             entry = session.execute(
                 select(LearningDataDBObj).where(
-                    LearningDataDBObj.user_id == user_id,
+                    LearningDataDBObj.user_id == self.user_id,
                     LearningDataDBObj.word_id == word_id,
                 )
             ).scalar()
@@ -199,17 +200,15 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
             )  # Attempting to add a score for a non-existent user should raise an error
 
     def test_add_word_score_nonexistent_word_id(self):
-        user_id = self.db_manager.insert_user("test_user")
         score_value = 8
 
         # Test adding a word score with a non-existent word_id
         with self.assertRaises(ValueDoesNotExistInDB):
             self.db_manager.add_word_score(
-                user_id, Score(999, score_value)
+                self.user_id, Score(999, score_value)
             )  # Attempting to add a score for a non-existent word should raise an error
 
     def test_add_word_score_incorrect_score(self):
-        user_id = self.db_manager.insert_user("test_user")
         word_list = [("cat", "NOUN", 10)]
         word_ids = self.db_manager.add_words_to_db(word_list)
         word_id = word_ids[0]
@@ -217,26 +216,15 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
         # Test adding a word score with an incorrect score
         with self.assertRaises(ValueError):
             self.db_manager.add_word_score(
-                user_id, Score(word_id, MIN_SCORE - 1)
+                self.user_id, Score(word_id, MIN_SCORE - 1)
             )  # Attempting to add a negative score should raise an error
         with self.assertRaises(ValueError):
             self.db_manager.add_word_score(
-                user_id, Score(word_id, MAX_SCORE + 1)
+                self.user_id, Score(word_id, MAX_SCORE + 1)
             )  # Attempting to add a score above the maximum should raise an error
 
 
 class TestUpdateUserScores(TestMixin, unittest.TestCase):
-    def setUp(self):
-        super().setUp()
-        # Insert a test user and predefined words
-        user_id = self.db_manager.insert_user("test_user")
-        word_list = [("word1", "noun", 1), ("word2", "verb", 2), ("word3", "adj", 3)]
-        word_ids = self.db_manager.add_words_to_db(word_list)
-
-        # Store user_id and word_ids for use in tests
-        self.user_id = user_id
-        self.word_ids = word_ids
-
     def test_update_user_scores_single_score_update(self):
         # Test adding a single score and updating it
         initial_scores = {Score(word_id=self.word_ids[0], score=5)}
@@ -250,12 +238,13 @@ class TestUpdateUserScores(TestMixin, unittest.TestCase):
 
     def test_update_user_scores_multiple_scores_update(self):
         # Prepare the initial and updated scores
-        initial_scores = {
-            Score(word_id=id, score=3 + i) for i, id in enumerate(self.word_ids)
-        }
+        initial_score_list = [Score(word_id=id, score=3 + i) for i, id in enumerate(self.word_ids)]
+        to_update_list = initial_score_list[:2]
+        initial_scores =set(initial_score_list)
+        to_update =set(to_update_list)
         updated_scores = {
-            Score(word_id=self.word_ids[0], score=8),
-            Score(word_id=self.word_ids[1], score=9),
+            Score(word_id=to_update_list[0].word_id, score=8),
+            Score(word_id=to_update_list[1].word_id, score=9),
         }
 
         # Apply the initial scores to the database
@@ -271,9 +260,7 @@ class TestUpdateUserScores(TestMixin, unittest.TestCase):
         actual_scores = set(actual_scores_dict.values())
 
         # Prepare the expected scores set
-        expected_scores = updated_scores.union(
-            {Score(word_id=self.word_ids[2], score=5)}
-        )  # Include the unchanged score
+        expected_scores = (initial_scores - to_update) | updated_scores
 
         # Assert that the sets are equal, confirming both updates and non-changes
         self.assertEqual(actual_scores, expected_scores)
@@ -296,18 +283,9 @@ class TestUpdateUserScores(TestMixin, unittest.TestCase):
 class TestRetrieveUserScores(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        # Insert test data
-        user_id = self.db_manager.insert_user("test_user")
-        word_ids = self.db_manager.add_words_to_db(
-            [("test", "noun", 1), ("study", "verb", 2)]
-        )
-
         # Add scores for both words for the user
-        self.db_manager.add_word_score(user_id, Score(word_ids[0], 5))
-        self.db_manager.add_word_score(user_id, Score(word_ids[1], 8))
-
-        self.user_id = user_id
-        self.word_ids = word_ids
+        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[0], 5))
+        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[1], 8))
 
     def test_user_with_scores(self):
         """
@@ -342,12 +320,6 @@ class TestRetrieveUserScores(TestMixin, unittest.TestCase):
 class TestTemplates(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        # Insert test data
-        user_id = self.db_manager.insert_user("test_user")
-        word_ids = self.db_manager.add_words_to_db(
-            [("test", "noun", 1), ("study", "verb", 2)]
-        )
-
         self.template_string = "test template string"
         self.template_description = "test description"
         self.template_examples = ["example 1", "example 2"]
@@ -493,11 +465,6 @@ class TestTemplates(TestMixin, unittest.TestCase):
 class TestResources(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        # Insert test data
-        self.user_id = self.db_manager.insert_user("test_user")
-        self.word_ids = self.db_manager.add_words_to_db(
-            [("test", "noun", 1), ("study", "verb", 2)]
-        )
         self.word_1 = self.db_manager.get_word_by_id(1)
         self.word_2 = self.db_manager.get_word_by_id(2)
 
@@ -606,11 +573,6 @@ class TestResources(TestMixin, unittest.TestCase):
 class TestTasks(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        # Insert test data
-        self.user_id = self.db_manager.insert_user("test_user")
-        self.word_ids = self.db_manager.add_words_to_db(
-            [("test", "noun", 1), ("study", "verb", 2)]
-        )
         self.word_1 = self.db_manager.get_word_by_id(1)
         self.word_2 = self.db_manager.get_word_by_id(2)
 
@@ -965,9 +927,6 @@ class TestTasks(TestMixin, unittest.TestCase):
 class TestUserLessonData(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        # add user
-        self.user_id = self.db_manager.insert_user("user1")
-
         # add template
         # Create a template with two parameters
         template_string = (
@@ -991,14 +950,11 @@ class TestUserLessonData(TestMixin, unittest.TestCase):
 
         # Add the template
         self.added_template_id = self.db_manager.add_template(test_template)
-        # add words
-        self.word_ids = self.db_manager.add_words_to_db(
-            [("word1", "noun", 10), ("word2", "verb", 8)]
-        )
-        self.words = {
-            LexicalItem("word1", "noun", 10, self.word_ids[0]),
-            LexicalItem("word2", "verb", 8, self.word_ids[1]),
-        }
+
+        word_1 = self.db_manager.get_word_by_id(1)
+        word_2 = self.db_manager.get_word_by_id(2)
+
+        self.select_words = {word_1, word_2}
 
     def tearDown(self):
         # Close the database connection and remove the test database file
@@ -1007,11 +963,11 @@ class TestUserLessonData(TestMixin, unittest.TestCase):
 
     def create_example_task(self, resource_string1, resource_string2):
         answer = "Sample answer"
-        resource1 = self.db_manager.add_resource_manual(resource_string1, self.words)
-        resource2 = self.db_manager.add_resource_manual(resource_string2, self.words)
+        resource1 = self.db_manager.add_resource_manual(resource_string1, self.select_words)
+        resource2 = self.db_manager.add_resource_manual(resource_string2, self.select_words)
         resources = {"sentence": resource1, "phrase": resource2}
         task = self.db_manager.add_task(
-            self.added_template_id, resources, self.words, answer
+            self.added_template_id, resources, self.select_words, answer
         )
         return task
 
@@ -1063,12 +1019,6 @@ class TestUserLessonData(TestMixin, unittest.TestCase):
 class TestRetrieveWordsForLesson(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        self.user_id = self.db_manager.insert_user("user1")
-        words = [
-            ("apple", "NOUN", 50), ("quickly", "ADV", 30), ("happy", "ADJ", 40),
-            ("run", "VERB", 60), ("blue", "ADJ", 20)
-        ]
-        self.word_ids = self.db_manager.add_words_to_db(words)
         # Assume 'apple' and 'happy' get scores for the user
         self.db_manager.add_word_score(self.user_id, Score(self.word_ids[0], 7)) # apple 
         self.db_manager.add_word_score(self.user_id, Score(self.word_ids[2], 8)) # happy
