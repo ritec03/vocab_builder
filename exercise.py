@@ -176,10 +176,12 @@ class Lesson:
         Assumes that a target word occurs only in one evaluation.
         """
         # get evaluation scores
-        final_eval_scores : Set[Score] = [eval.get_final_scores_highest() for eval in self.evaluation_list]
-        final_scores = [score for list_of_scores in final_eval_scores for score in list_of_scores]
-        # save scores to db
-        [DB.add_word_score(self.user_id, score) for score in final_scores]
+        # NOTE assuming that evaluations contain non-overlapping partition of target words
+        final_eval_scores : List[Set[Score]] = [eval.get_final_scores_highest() for eval in self.evaluation_list]
+        final_scores = set()
+        for s in final_eval_scores:
+            final_scores = final_scores.union(s)
+        DB.update_user_scores(self.user_id, final_scores)
         logger.info(final_scores)
     
     def save_evaluations(self) -> None:
@@ -216,7 +218,7 @@ class LessonGenerator():
         # NOTE later also take into account user lesson history
         # retrieve user learning data
         # retrieve user lesson evaluation history
-        user_word_scores = self.retrieve_user_data()
+        user_word_scores = DB.retrieve_user_scores(self.user_id)
         logger.info(user_word_scores)
         # choose target words
         target_words = self.choose_target_words(user_word_scores)
@@ -224,10 +226,6 @@ class LessonGenerator():
         lesson_plan = self.generate_lesson_plan(target_words)
         # return lesson
         return Lesson(self.user_id, target_words, lesson_plan)
-    
-    def retrieve_user_data(self) -> Set[Score]:
-        user_scores = DB.retrieve_user_scores(self.user_id)
-        return user_scores
 
     def choose_target_words(self, user_scores: Set[Score]) -> Set[LexicalItem]:
         # TODO also take into account time last practiced later

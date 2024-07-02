@@ -284,26 +284,7 @@ class DatabaseManager:
 
             # Process each score
             for score in lesson_scores:
-                # Verify word exists
-                word = session.get(WordDBObj, score.word_id)
-                if not word:
-                    raise ValueDoesNotExistInDB("Word does not exist")
-
-                # Add or update the score
-                existing_score = session.execute(
-                    select(LearningDataDBObj).where(
-                        LearningDataDBObj.user_id == user_id,
-                        LearningDataDBObj.word_id == score.word_id,
-                    )
-                ).scalar()
-
-                if existing_score:
-                    existing_score.score = score.score
-                else:
-                    new_score = LearningDataDBObj(
-                        user_id=user_id, word_id=score.word_id, score=score.score
-                    )
-                    session.add(new_score)
+                self.add_word_score(user_id, score)
 
     def retrieve_user_scores(self, user_id: int) -> Dict[int, Score]:
         """

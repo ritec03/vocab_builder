@@ -1,11 +1,11 @@
 import json
-from typing import List, Dict, Tuple
+from typing import List, Tuple
 
 import pandas as pd
 from data_structures import TaskType, Language
 from exercise import LessonGenerator
 from task_template import TaskTemplate
-from database_orm import DB, DatabaseManager
+from database_orm import DB
 import logging
 
 logger = logging.getLogger(__name__)
