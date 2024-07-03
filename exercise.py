@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class ErrorCorrectionStrategy(ABC):
     @abstractmethod
-    def apply_correction(self, evaluation: Evaluation) -> Evaluation:
+    def choose_correction_task(self, evaluation: Evaluation) -> Evaluation:
         """
         Applies a correction strategy to the task based on the user's response and the evaluation manager.
         
@@ -46,9 +46,12 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
     This strategy produces a different task with the same template
     for the target words.
     """
-    # TODO strategy shouldn't run tasks but return them
     # TODO there should be separate code that determines which target words failed
-    def apply_correction(self, evaluation: Evaluation) -> Evaluation:
+    def choose_correction_task(self, evaluation: Evaluation) -> Task:
+        """
+        Based on the evaluation, chooses a task that is of the same type as the latest
+        task to be re-tried.
+        """
         # take last evaluation's task
         previous_task = evaluation.get_last_task()
         # get new target words
@@ -58,18 +61,15 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
         new_task = TaskFactory().get_task_for_word(words_to_retry, previous_task.template)
         if new_task.id == previous_task.id:
             raise Exception("Implement criteria not to choose the same task.")
-        user_response = input(new_task.produce_task())
-        evaluation_result = new_task.evaluate_user_input(user_response)
-        evaluation.add_entry(new_task, user_response, evaluation_result)
-        return evaluation
-
+        return new_task
+    
 class HintStrategy(ErrorCorrectionStrategy):
-    def apply_correction(self, evaluation) -> Evaluation:
+    def choose_correction_task(self, evaluation) -> Task:
         # Logic to provide a hint for the same task
         pass
 
 class ExplanationStrategy(ErrorCorrectionStrategy):
-    def apply_correction(self, evaluation) -> Evaluation:
+    def choose_correction_task(self, evaluation) -> Task:
         # Logic to provide an explanation for the correct answer
         pass
 
@@ -114,19 +114,30 @@ class ExerciseSequence:
         :reutrn: The evaluation result as a new and updated object.
         """
         if self.attempt_count == 0:
-            user_response = input(self.task.produce_task())
-            evaluation_result = self.task.evaluate_user_input(user_response)
-            evaluation.add_entry(self.task, user_response, evaluation_result)
+            evaluation = self.perform_task(self.task, evaluation)
         elif self.attempt_count > 0 and self.attempt_count < len(self.strategies_sequence):
             words_to_retry = evaluation.get_last_low_scored_words()
             if len(words_to_retry) > 0:        
                 strategy_key = self.strategies_sequence[self.attempt_count]
-                strategy = get_strategy_object(strategy_key)
-                evaluation = strategy.apply_correction(evaluation)
+                strategy = get_strategy_object(strategy_key)()
+                new_task = strategy.choose_correction_task(evaluation)
+                evaluation = self.perform_task(new_task, evaluation)
+            else:
+                logger.info("No more words to retry for the task.")
         elif self.attempt_count >= len(self.strategies_sequence):
             return evaluation
 
         self.attempt_count += 1
+        return evaluation
+    
+    def perform_task(self, task: Task, evaluation: Evaluation) -> Evaluation:
+        """
+        Records user response for the task, runs evaluations and appends evaluation
+        to the evaluation object.
+        """
+        user_response = input(task.produce_task())
+        evaluation_result = task.evaluate_user_input(user_response)
+        evaluation.add_entry(task, user_response, evaluation_result)
         return evaluation
     
     def perform_sequence(self) -> Evaluation:
