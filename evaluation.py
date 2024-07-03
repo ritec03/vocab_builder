@@ -1,6 +1,6 @@
 
 from typing import Dict, List, Set
-from data_structures import EXERCISE_THRESHOLD, LexicalItem, Score
+from data_structures import LexicalItem, Score
 from task import Task
 
 class HistoryEntry:
@@ -45,11 +45,15 @@ class Evaluation:
         """
         return self._get_last_history().evaluation_result
     
-    def get_last_low_scored_words(self) -> Set[LexicalItem]:
+    def get_last_words_scored_below(self, theshold: int) -> Set[LexicalItem]:
+        """
+        Returns a set of lexical items that were scored below the threshold
+        in the last evaluation history entry.
+        """
         last_low_scored_word_ids = list(map(
                 (lambda x: x.word_id),
                 filter(
-                    (lambda x: x.score < EXERCISE_THRESHOLD),
+                    (lambda x: x.score < theshold),
                     self.get_last_scores()
                 )
             )

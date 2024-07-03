@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Set, Tuple, Type
-from data_structures import NUM_NEW_WORDS_PER_LESSON, NUM_WORDS_PER_LESSON, CorrectionStrategy, LexicalItem, Score
+from typing import List, Optional, Set, Tuple, Type
+from data_structures import EXERCISE_THRESHOLD, NUM_NEW_WORDS_PER_LESSON, NUM_WORDS_PER_LESSON, CorrectionStrategy, LexicalItem, Score
 from database_orm import DB, DatabaseManager
 from evaluation import Evaluation
 from task import Task
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class ErrorCorrectionStrategy(ABC):
     @abstractmethod
-    def choose_correction_task(self, evaluation: Evaluation) -> Evaluation:
+    def choose_correction_task(self, evaluation: Evaluation) -> Optional[Task]:
         """
         Applies a correction strategy to the task based on the user's response and the evaluation manager.
         
@@ -47,7 +47,7 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
     for the target words.
     """
     # TODO there should be separate code that determines which target words failed
-    def choose_correction_task(self, evaluation: Evaluation) -> Task:
+    def choose_correction_task(self, evaluation: Evaluation) -> Optional[Task]:
         """
         Based on the evaluation, chooses a task that is of the same type as the latest
         task to be re-tried.
@@ -55,7 +55,9 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
         # take last evaluation's task
         previous_task = evaluation.get_last_task()
         # get new target words
-        words_to_retry = evaluation.get_last_low_scored_words()
+        words_to_retry = evaluation.get_last_words_scored_below(EXERCISE_THRESHOLD)
+        if not words_to_retry:
+            return None
         # produce equivalent task for same lexical items
         # make sure it's not the same task
         new_task = TaskFactory().get_task_for_word(words_to_retry, previous_task.template)
@@ -64,12 +66,12 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
         return new_task
     
 class HintStrategy(ErrorCorrectionStrategy):
-    def choose_correction_task(self, evaluation) -> Task:
+    def choose_correction_task(self, evaluation) -> Optional[Task]:
         # Logic to provide a hint for the same task
         pass
 
 class ExplanationStrategy(ErrorCorrectionStrategy):
-    def choose_correction_task(self, evaluation) -> Task:
+    def choose_correction_task(self, evaluation) -> Optional[Task]:
         # Logic to provide an explanation for the correct answer
         pass
 
@@ -116,14 +118,13 @@ class ExerciseSequence:
         if self.attempt_count == 0:
             evaluation = self.perform_task(self.task, evaluation)
         elif self.attempt_count > 0 and self.attempt_count < len(self.strategies_sequence):
-            words_to_retry = evaluation.get_last_low_scored_words()
-            if len(words_to_retry) > 0:        
-                strategy_key = self.strategies_sequence[self.attempt_count]
-                strategy = get_strategy_object(strategy_key)()
-                new_task = strategy.choose_correction_task(evaluation)
+            strategy_key = self.strategies_sequence[self.attempt_count]
+            strategy = get_strategy_object(strategy_key)()
+            new_task = strategy.choose_correction_task(evaluation)
+            if new_task:
                 evaluation = self.perform_task(new_task, evaluation)
             else:
-                logger.info("No more words to retry for the task.")
+                pass
         elif self.attempt_count >= len(self.strategies_sequence):
             return evaluation
 
