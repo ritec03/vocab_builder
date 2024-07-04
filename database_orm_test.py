@@ -1,3 +1,4 @@
+from typing import Set
 import unittest
 
 from sqlalchemy import select
@@ -28,7 +29,7 @@ from database_objects import (
 )
 import os
 
-from task import get_task_type_class
+from task import Task, get_task_type_class
 from evaluation import Evaluation
 from task_template import TaskTemplate
 
@@ -42,11 +43,11 @@ class TestMixin:
             os.remove(TEST_DB_FILE)
         self.db_manager = DatabaseManager(TEST_DB_FILE)
         # Insert a test user and predefined words
-        self.words = [
+        self.words_tuples = [
             ("apple", "NOUN", 50), ("quickly", "ADV", 30), ("happy", "ADJ", 40),
             ("run", "VERB", 60), ("blue", "ADJ", 20)
         ]
-        self.word_ids = self.db_manager.add_words_to_db(self.words)
+        self.word_ids = self.db_manager.add_words_to_db(self.words_tuples)
         self.user_id = self.db_manager.insert_user("test_user")
 
 
@@ -133,8 +134,8 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
 
     def test_add_existing_word_entry(self):
         # Test adding an existing word/pos entry to the words table
-        new_freq = self.words[0][2] + 10
-        word_pos_duplicate = [(self.words[0][0], self.words[0][1], new_freq)]
+        new_freq = self.words_tuples[0][2] + 10
+        word_pos_duplicate = [(self.words_tuples[0][0], self.words_tuples[0][1], new_freq)]
         word_ids = self.db_manager.add_words_to_db(
             word_pos_duplicate
         )  # Attempt to add the same entry again
@@ -149,161 +150,303 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
             ).all()  # TODO remove sqlalchemy code
             self.assertEqual(len(all_words), len(self.word_ids))  # Ensure only one word entry exists
 
-    def test_add_word_score_update_existing(self):
-        # Test adding a word score
-        word_list = [("cat", "NOUN", 10)]
-        word_ids = self.db_manager.add_words_to_db(word_list)
-
-        word_id = word_ids[0]
-        OLD_SCORE = 8
-        NEW_SCORE = 5
-
-        # Add old score
-        self.db_manager.add_word_score(self.user_id, Score(word_id, OLD_SCORE))
-        # Assert that the word score is added successfully
-        score = self.db_manager.get_score(self.user_id, word_id)
-        self.assertEqual(score, OLD_SCORE)  # Check that the score is OLD_SCORE
-
-        # Update the score
-        self.db_manager.add_word_score(self.user_id, Score(word_id, NEW_SCORE))
-        # Assert that the score is updated
-        updated_score = self.db_manager.get_score(self.user_id, word_id)
-        self.assertEqual(updated_score, NEW_SCORE)  # Check that the score is NEW_SCORE
-
     def test_add_word_score(self):
-        word_list = [("cat", "NOUN", 10)]
-        word_ids = self.db_manager.add_words_to_db(word_list)
-        word_id = word_ids[0]
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
         score_value = 8
-        self.db_manager.add_word_score(self.user_id, Score(word_id, score_value))
+        
+        # add lesson
+        template_id = add_template(self.db_manager)
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
+        # add word score
+        self.db_manager.add_word_score(self.user_id, Score(word.id, score_value), lesson_id)
 
         # Assert that the word score is added successfully
         with self.db_manager.Session.begin() as session:
             entry = session.execute(
                 select(LearningDataDBObj).where(
                     LearningDataDBObj.user_id == self.user_id,
-                    LearningDataDBObj.word_id == word_id,
+                    LearningDataDBObj.word_id == word.id,
+                    LearningDataDBObj.lesson_id == lesson_id
                 )
             ).scalar()
             self.assertEqual(entry.score, score_value)  # Check that the score is 8
 
-    def test_add_word_score_nonexistent_user(self):
-        word_list = [("cat", "NOUN", 10)]
-        word_ids = self.db_manager.add_words_to_db(word_list)
-        word_id = word_ids[0]
-        score_value = 8
+    def test_add_word_score_two_scores_for_word(self):
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
 
-        # Test adding a word score with a non-existent user
+        OLD_SCORE = 8
+        NEW_SCORE = 5
+        template_id = add_template(self.db_manager)
+
+        # add first lesson
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
+        # Add old score
+        self.db_manager.add_word_score(self.user_id, Score(word.id, OLD_SCORE), lesson_id)
+        # Assert that the word score is added successfully
+        score = self.db_manager.get_score(self.user_id, word.id, lesson_id)
+        self.assertEqual(score, OLD_SCORE)  # Check that the score is OLD_SCORE
+
+        # add second lesson
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, NEW_SCORE)})
+        lesson = [evaluation1]
+        second_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
+        # Add the next score for same word
+        self.db_manager.add_word_score(self.user_id, Score(word.id, NEW_SCORE), second_lesson_id)
+
+        # Assert that the second score was added
+        updated_score = self.db_manager.get_score(self.user_id, word.id, second_lesson_id)
+        self.assertEqual(updated_score, NEW_SCORE)  # Check that the score is NEW_SCORE
+
+    def test_add_word_score_two_scores_for_word_same_lesson(self):
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
+
+        OLD_SCORE = 8
+        NEW_SCORE = 5
+        template_id = add_template(self.db_manager)
+
+        # add first lesson
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
+        # Add old score
+        self.db_manager.add_word_score(self.user_id, Score(word.id, OLD_SCORE), lesson_id)
+        # Assert that the word score is added successfully
+        score = self.db_manager.get_score(self.user_id, word.id, lesson_id)
+        self.assertEqual(score, OLD_SCORE)  # Check that the score is OLD_SCORE
+
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.add_word_score(
-                999, Score(word_id, score_value)
-            )  # Attempting to add a score for a non-existent user should raise an error
+            # Add the next score for same word
+            self.db_manager.add_word_score(self.user_id, Score(word.id, NEW_SCORE), lesson_id)
+
+    def test_add_word_score_no_lesson(self):
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
+        score_value = 8
+        non_existent_lesson_id = 999
+        # add word score
+        with self.assertRaises(ValueDoesNotExistInDB):
+            self.db_manager.add_word_score(self.user_id, Score(word.id, score_value), non_existent_lesson_id)
+
+
+    def test_add_word_score_nonexistent_user(self):
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
+        score_value = 8
+        
+        # add lesson
+        template_id = add_template(self.db_manager)
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
+        with self.assertRaises(ValueDoesNotExistInDB):
+            # add word score
+            self.db_manager.add_word_score(999, Score(word.id, score_value), lesson_id)
 
     def test_add_word_score_nonexistent_word_id(self):
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
         score_value = 8
+        
+        # add lesson
+        template_id = add_template(self.db_manager)
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # Test adding a word score with a non-existent word_id
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.add_word_score(
-                self.user_id, Score(999, score_value)
-            )  # Attempting to add a score for a non-existent word should raise an error
+            # add word score
+            self.db_manager.add_word_score(self.user_id, Score(999, score_value), lesson_id)
 
     def test_add_word_score_incorrect_score(self):
-        word_list = [("cat", "NOUN", 10)]
-        word_ids = self.db_manager.add_words_to_db(word_list)
-        word_id = word_ids[0]
-
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
+        score_value = 8
+        
+        # add lesson
+        template_id = add_template(self.db_manager)
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+      
         # Test adding a word score with an incorrect score
         with self.assertRaises(ValueError):
             self.db_manager.add_word_score(
-                self.user_id, Score(word_id, MIN_SCORE - 1)
+                self.user_id, Score(word.id, MIN_SCORE - 1), lesson_id
             )  # Attempting to add a negative score should raise an error
         with self.assertRaises(ValueError):
             self.db_manager.add_word_score(
-                self.user_id, Score(word_id, MAX_SCORE + 1)
+                self.user_id, Score(word.id, MAX_SCORE + 1), lesson_id
             )  # Attempting to add a score above the maximum should raise an error
 
 
 class TestUpdateUserScores(TestMixin, unittest.TestCase):
-    def test_update_user_scores_single_score_update(self):
-        # Test adding a single score and updating it
-        initial_scores = {Score(word_id=self.word_ids[0], score=5)}
-        updated_scores = {Score(word_id=self.word_ids[0], score=7)}
-        self.db_manager.update_user_scores(self.user_id, initial_scores)
-        self.db_manager.update_user_scores(self.user_id, updated_scores)
-        score = self.db_manager.get_score(self.user_id, self.word_ids[0])
+    def test_update_user_scores_two_scores_for_word(self):
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
+        word_1 = self.db_manager.get_word_by_id(self.word_ids[1])
 
-        # Assert that the score is updated correctly
-        self.assertEqual(score, updated_scores.pop().score)
+        OLD_SCORE = 8
+        OLD_SCORE_1 = 4
+        NEW_SCORE = 5
+        NEW_SCORE_1 = 7
+        template_id = add_template(self.db_manager)
 
-    def test_update_user_scores_multiple_scores_update(self):
-        # Prepare the initial and updated scores
-        initial_score_list = [Score(word_id=id, score=3 + i) for i, id in enumerate(self.word_ids)]
-        to_update_list = initial_score_list[:2]
-        initial_scores =set(initial_score_list)
-        to_update =set(to_update_list)
-        updated_scores = {
-            Score(word_id=to_update_list[0].word_id, score=8),
-            Score(word_id=to_update_list[1].word_id, score=9),
-        }
+        # add first lesson
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
+        evaluation1.add_entry(task, "response2", {Score(word_1.id, OLD_SCORE_1)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # Apply the initial scores to the database
-        self.db_manager.update_user_scores(self.user_id, initial_scores)
+        # add second lesson
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, NEW_SCORE)})
+        evaluation1.add_entry(task, "response2", {Score(word_1.id, NEW_SCORE_1)})
+        lesson = [evaluation1]
+        second_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # Update the scores with the new values
-        self.db_manager.update_user_scores(self.user_id, updated_scores)
+        # Add old score
+        self.db_manager.update_user_scores(self.user_id, {Score(word.id, OLD_SCORE), Score(word_1.id, OLD_SCORE_1)}, lesson_id)
+        self.db_manager.update_user_scores(self.user_id, {Score(word.id, NEW_SCORE), Score(word_1.id, NEW_SCORE_1)}, second_lesson_id)
 
-        # Retrieve the scores from the database
-        actual_scores_dict = self.db_manager.retrieve_user_scores(self.user_id)
+        # Assert that the word score is added successfully
+        score = self.db_manager.get_score(self.user_id, word.id, lesson_id)
+        self.assertEqual(score, OLD_SCORE)  # Check that the score is OLD_SCORE
+        score = self.db_manager.get_score(self.user_id, word_1.id, lesson_id)
+        self.assertEqual(score, OLD_SCORE_1)  # Check that the score is OLD_SCORE
 
-        # Convert dictionary to set of Scores for easier comparison
-        actual_scores = set(actual_scores_dict.values())
+        # Assert that the second score was added
+        updated_score = self.db_manager.get_score(self.user_id, word.id, second_lesson_id)
+        self.assertEqual(updated_score, NEW_SCORE)  # Check that the score is NEW_SCORE
+        updated_score = self.db_manager.get_score(self.user_id, word_1.id, second_lesson_id)
+        self.assertEqual(updated_score, NEW_SCORE_1)  # Check that the score is NEW_SCORE
 
-        # Prepare the expected scores set
-        expected_scores = (initial_scores - to_update) | updated_scores
+    def test_update_user_scores_two_scores_for_word_same_lesson(self):
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
 
-        # Assert that the sets are equal, confirming both updates and non-changes
-        self.assertEqual(actual_scores, expected_scores)
+        OLD_SCORE = 8
+        NEW_SCORE = 5
+        template_id = add_template(self.db_manager)
+
+        # add first lesson
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
+        # add second lesson
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, NEW_SCORE)})
+        lesson = [evaluation1]
+        second_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
+        with self.assertRaises(ValueDoesNotExistInDB):
+            # Add old score
+            self.db_manager.update_user_scores(self.user_id, {Score(word.id, OLD_SCORE), Score(word.id, NEW_SCORE)}, lesson_id)
 
     def test_update_user_scores_nonexistent_word(self):
-        # Test updating scores for a non-existent word
-        scores = {Score(word_id=9999, score=7)}  # Assuming 9999 does not exist
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
+        score_value = 8
+        
+        # add lesson
+        template_id = add_template(self.db_manager)
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.update_user_scores(self.user_id, scores)
+            # add word score
+            self.db_manager.update_user_scores(self.user_id, {Score(999, score_value)}, lesson_id)
+
 
     def test_update_user_scores_nonexistent_user(self):
-        # Test updating scores for a non-existent user
-        scores = {Score(word_id=self.word_ids[0], score=7)}
-        with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.update_user_scores(
-                9999, scores
-            )  # Assuming 9999 is a non-existent user ID
+        word = self.db_manager.get_word_by_id(self.word_ids[0])
+        score_value = 8
+        
+        # add lesson
+        template_id = add_template(self.db_manager)
+        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
+        with self.assertRaises(ValueDoesNotExistInDB):
+            # add word score
+            self.db_manager.update_user_scores(999, {Score(word.id, score_value)}, lesson_id)
 
 class TestRetrieveUserScores(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        # Add scores for both words for the user
-        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[0], 5))
-        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[1], 8))
+        self.template_id = add_template(self.db_manager)
+        # add first lesson
+        self.word_1 = self.db_manager.get_word_by_id(self.word_ids[0])
+        self.word_2 = self.db_manager.get_word_by_id(self.word_ids[2])
+
+        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1, self.word_2}, self.template_id)
+        evaluation1 = Evaluation()
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
+        self.db_manager.add_word_score(self.user_id, Score(self.word_1.id, 5), lesson_id)
+        self.db_manager.add_word_score(self.user_id, Score(self.word_2.id, 8), lesson_id)
 
     def test_user_with_scores(self):
         """
         Test retrieving scores for a user with existing scores.
         """
-        scores = self.db_manager.retrieve_user_scores(self.user_id)
+        scores = self.db_manager.get_latest_word_score_for_user(self.user_id)
         self.assertIsInstance(scores, dict)
         self.assertEqual(len(scores), 2)  # Expecting scores for 2 words
         # Check specific scores
-        self.assertEqual(scores.get(self.word_ids[0]).score, 5)
-        self.assertEqual(scores.get(self.word_ids[1]).score, 8)
+        self.assertEqual(scores.get(self.word_1.id).score, 5)
+        self.assertEqual(scores.get(self.word_2.id).score, 8)
+
+    def test_two_scores_one_updated(self):
+        NEW_SCORE = 1
+        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1, self.word_2}, self.template_id)
+        evaluation1 = Evaluation()
+        lesson = [evaluation1]
+        new_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        self.db_manager.add_word_score(self.user_id, Score(self.word_1.id, NEW_SCORE), new_lesson_id)
+        
+        scores = self.db_manager.get_latest_word_score_for_user(self.user_id)
+        self.assertIsInstance(scores, dict)
+        self.assertEqual(len(scores), 2)  # Expecting scores for 2 words
+        # Check specific scores
+        self.assertEqual(scores.get(self.word_1.id).score, NEW_SCORE)
+        self.assertEqual(scores.get(self.word_2.id).score, 8)
 
     def test_user_without_scores(self):
         """
         Test retrieving scores for a user without scores.
         """
         another_user_id = self.db_manager.insert_user("another_user")
-        scores = self.db_manager.retrieve_user_scores(another_user_id)
+        scores = self.db_manager.get_latest_word_score_for_user(another_user_id)
         self.assertIsInstance(scores, dict)
         self.assertEqual(len(scores), 0)
 
@@ -312,7 +455,7 @@ class TestRetrieveUserScores(TestMixin, unittest.TestCase):
         Test retrieving scores for a nonexistent user.
         """
         with self.assertRaises(ValueDoesNotExistInDB):
-            self.db_manager.retrieve_user_scores(
+            self.db_manager.get_latest_word_score_for_user(
                 9999
             )  # Assuming 9999 is an ID that does not exist
 
@@ -929,31 +1072,9 @@ class TestUserLessonData(TestMixin, unittest.TestCase):
         super().setUp()
         # add template
         # Create a template with two parameters
-        template_string = (
-            "Translate the following into English:\n" + "   '$sentence' and '$phrase'"
-        )
-        template_description = "Description of the template"
-        template_examples = ["Example one", "Example two"]
-        parameter_description = {
-            "sentence": "Sentence in target language to be translated into English.",
-            "phrase": "Phrase in target language to be translated into English.",
-        }
-        test_template = TaskTemplate(
-            target_language=Language.GERMAN,
-            starting_language=Language.ENGLISH,
-            template_string=template_string,
-            template_description=template_description,
-            template_examples=template_examples,
-            parameter_description=parameter_description,
-            task_type=TaskType.ONE_WAY_TRANSLATION,
-        )
-
-        # Add the template
-        self.added_template_id = self.db_manager.add_template(test_template)
-
+        self.template_id = add_template(self.db_manager)
         word_1 = self.db_manager.get_word_by_id(1)
         word_2 = self.db_manager.get_word_by_id(2)
-
         self.select_words = {word_1, word_2}
 
     def tearDown(self):
@@ -961,29 +1082,8 @@ class TestUserLessonData(TestMixin, unittest.TestCase):
         if os.path.exists(TEST_DB_FILE):
             os.remove(TEST_DB_FILE)
 
-    def create_example_task(self, resource_string1, resource_string2):
-        answer = "Sample answer"
-        resource1 = self.db_manager.add_resource_manual(resource_string1, self.select_words)
-        resource2 = self.db_manager.add_resource_manual(resource_string2, self.select_words)
-        resources = {"sentence": resource1, "phrase": resource2}
-        task = self.db_manager.add_task(
-            self.added_template_id, resources, self.select_words, answer
-        )
-        return task
-
     def test_add_user_lesson_data(self):
-        task1 = self.create_example_task("task1-r1", "task1-r2")
-        task2 = self.create_example_task("task2-r1", "task2-r2")
-        task3 = self.create_example_task("task3-r1", "task3-r2")
-
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task1, "response1", {Score(1, 4)})
-        evaluation1.add_entry(task2, "response2", {Score(1, 6)})
-        evaluation2 = Evaluation()
-        evaluation2.add_entry(task3, "response3", {Score(1, 5), Score(2, 7)})
-
-        lesson_data = [evaluation1, evaluation2]
-
+        lesson_data = create_example_lesson(self.db_manager, self.select_words, self.template_id)
         self.db_manager.save_user_lesson_data(self.user_id, lesson_data)
 
         # Validate the insertion of user lesson data
@@ -1019,9 +1119,21 @@ class TestUserLessonData(TestMixin, unittest.TestCase):
 class TestRetrieveWordsForLesson(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
+
+        self.template_id = add_template(self.db_manager)
+        # add first lesson
+        self.word_1 = self.db_manager.get_word_by_id(self.word_ids[0])
+        self.word_2 = self.db_manager.get_word_by_id(self.word_ids[2])
+
+        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1, self.word_2}, self.template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(self.word_1.id, 7)})
+        evaluation1.add_entry(task, "response1", {Score(self.word_2.id, 8)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
         # Assume 'apple' and 'happy' get scores for the user
-        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[0], 7)) # apple 
-        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[2], 8)) # happy
+        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[0], 7), lesson_id) # apple 
+        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[2], 8), lesson_id) # happy
 
     def test_successful_retrieval(self):
         retrieved_words = self.db_manager.retrieve_words_for_lesson(self.user_id, 2)
@@ -1033,22 +1145,34 @@ class TestRetrieveWordsForLesson(TestMixin, unittest.TestCase):
         with self.assertRaises(ValueDoesNotExistInDB):
             self.db_manager.retrieve_words_for_lesson(9999, 2)  # Assuming 9999 does not exist
 
-    def test_empty_result_set(self):
+    def test_empty_result_set(self):        
+        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1}, self.template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(self.word_1.id, 7)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
         # User scored on all words
         for word_id in self.word_ids:
-            self.db_manager.add_word_score(self.user_id, Score(word_id, 5))
+            self.db_manager.add_word_score(self.user_id, Score(word_id, 5), lesson_id)
         retrieved_words = self.db_manager.retrieve_words_for_lesson(self.user_id, 2)
         self.assertEqual(len(retrieved_words), 0)
 
     def test_partial_word_retrieval_due_to_scores(self):
+        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1}, self.template_id)
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task, "response1", {Score(self.word_1.id, 7)})
+        lesson = [evaluation1]
+        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
         # Adding additional words
         additional_words = [
             ("tree", "NOUN", 45), ("bright", "ADJ", 35), ("write", "VERB", 25)
         ]
         additional_word_ids = self.db_manager.add_words_to_db(additional_words)
         # Assume 'tree' and 'bright' get scores for the user
-        self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[0], 6)) # tree 
-        self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[1], 9)) # bright
+        self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[0], 6), lesson_id) # tree 
+        self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[1], 9), lesson_id) # bright
 
         # The user now has scores for 'apple', 'happy', 'tree', and 'bright'.
         # Remaining without scores are 'quickly', 'run', 'blue', 'write'.
@@ -1062,3 +1186,64 @@ class TestRetrieveWordsForLesson(TestMixin, unittest.TestCase):
         }
         self.assertEqual(set(retrieved_words), expected_words)
         self.assertEqual(len(retrieved_words), 3)  # Only three words should be returned
+
+
+"""
+HELPER FUNCTIONS
+"""
+
+def add_template(db_manager: DatabaseManager) -> int:
+        """
+        Adds an example template to the database and return its id.
+        """
+        template_string = (
+        "Translate the following into English:\n" + "   '$sentence' and '$phrase'"
+        )
+        template_description = "Description of the template"
+        template_examples = ["Example one", "Example two"]
+        parameter_description = {
+            "sentence": "Sentence in target language to be translated into English.",
+            "phrase": "Phrase in target language to be translated into English.",
+        }
+        test_template = TaskTemplate(
+            target_language=Language.GERMAN,
+            starting_language=Language.ENGLISH,
+            template_string=template_string,
+            template_description=template_description,
+            template_examples=template_examples,
+            parameter_description=parameter_description,
+            task_type=TaskType.ONE_WAY_TRANSLATION,
+        )
+
+        template_id = db_manager.add_template(test_template)
+        return template_id
+
+def create_example_task(
+        db_manager: DatabaseManager, 
+        resource_string1: str, 
+        resource_string2: str,
+        select_words: Set[LexicalItem],
+        template_id: int    
+    ) -> Task:
+    answer = "Sample answer"
+    resource1 = db_manager.add_resource_manual(resource_string1, select_words)
+    resource2 = db_manager.add_resource_manual(resource_string2, select_words)
+    resources = {"sentence": resource1, "phrase": resource2}
+    task = db_manager.add_task(
+        template_id, resources, select_words, answer
+    )
+    return task
+
+def create_example_lesson(db_manager: DatabaseManager, select_words: Set[LexicalItem], template_id: int):
+        task1 = create_example_task(db_manager, "task1-r1", "task1-r2", select_words, template_id)
+        task2 = create_example_task(db_manager, "task2-r1", "task2-r2", select_words, template_id)
+        task3 = create_example_task(db_manager, "task3-r1", "task3-r2", select_words, template_id)
+
+        evaluation1 = Evaluation()
+        evaluation1.add_entry(task1, "response1", {Score(1, 4)})
+        evaluation1.add_entry(task2, "response2", {Score(1, 6)})
+        evaluation2 = Evaluation()
+        evaluation2.add_entry(task3, "response3", {Score(1, 5), Score(2, 7)})
+
+        lesson_data = [evaluation1, evaluation2]
+        return lesson_data

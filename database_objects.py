@@ -3,6 +3,7 @@ from typing import List
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
+    Index,
     UniqueConstraint,
     Enum,
     func,
@@ -66,6 +67,13 @@ class LearningDataDBObj(Base):
     word_id = mapped_column(ForeignKey("words.id"))
     score: Mapped[int] = mapped_column(
         Integer, CheckConstraint("score >= 0 AND score <= 10"), unique=False
+    )
+    lesson_id = mapped_column(ForeignKey("user_lessons.id"))
+    lesson = relationship("UserLessonDBObj", back_populates="scores")
+
+    __table_args__ = (
+        Index('idx_user_word_lesson_id', 'user_id', 'word_id', 'lesson_id'),
+        UniqueConstraint("word_id", "lesson_id"),
     )
 
 
@@ -194,7 +202,9 @@ class UserLessonDBObj(Base):
         default=func.now(), server_default=func.now(), type_=TIMESTAMP
     )
     evaluations: Mapped[List["EvaluationDBObj"]] = relationship("EvaluationDBObj")
+    scores = relationship("LearningDataDBObj", back_populates="lesson", cascade="all, delete")
 
+    __table_args__ = (Index("idx_timestamp_desc", timestamp.desc()),) # access most recent lessons
 
 class EvaluationDBObj(Base):
     """

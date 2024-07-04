@@ -5,6 +5,7 @@ from sqlalchemy import (
     and_,
     func,
     create_engine,
+    over,
     select,
     event,
 )
@@ -220,55 +221,49 @@ class DatabaseManager:
                 session.flush()
                 logger.info(f"User with ID {user_id} removed successfully.")
 
-    def add_word_score(self, user_id: int, score: Score):
+    def add_word_score(self, user_id: int, score: Score, lesson_id: int):
         """
-        Adds or updates a row in learning_data for the user with user_id
-        for word_id with the given score. Score should be between MIN_SCORE and MAX_SCORE.
-        If a score for the word already exists for the user, it is updated.
+        Adds the score for the word for a particular lesson.
+        Score should be between MIN_SCORE and MAX_SCORE.
+
+        Constraint: Should add only one score per lesson.
+
+        Assumes:
+            that that lesson was added to DB first
 
         Args:
             user_id (int): ID of the user.
             word_id (int): ID of the word.
             score (int): Score to add (MIN_SCORE and MAX_SCORE).
+            lesson_id (int): The lesson id the added score is associated with.
         """
         with self.Session.begin() as session:
             if not MIN_SCORE <= score.score <= MAX_SCORE:
                 raise ValueError(
                     f"Score should be between {MIN_SCORE} and {MAX_SCORE}."
                 )
-
-            # Check if score exists, update if yes, else create new
-            entry = session.execute(
-                select(LearningDataDBObj).where(
-                    and_(
-                        LearningDataDBObj.user_id == user_id,
-                        LearningDataDBObj.word_id == score.word_id,
-                    )
+            try:
+                new_entry = LearningDataDBObj(
+                    user_id=user_id, word_id=score.word_id, score=score.score, lesson_id=lesson_id
                 )
-            ).scalar()
-            if entry:
-                entry.score = score.score
-            else:
-                try:
-                    new_entry = LearningDataDBObj(
-                        user_id=user_id, word_id=score.word_id, score=score.score
-                    )
-                    session.add(new_entry)
-                    session.flush()
-                except IntegrityError:
-                    raise ValueDoesNotExistInDB("User or word id invalid.")
+                session.add(new_entry)
+                session.flush()
+            except IntegrityError as e:
+                print(e)
+                raise ValueDoesNotExistInDB("User or word or lesson id invalid.")
 
-    def get_score(self, user_id, word_id):
+    def get_score(self, user_id: int, word_id: int, lesson_id: int):
         with self.Session.begin() as session:
             entry = session.execute(
                 select(LearningDataDBObj).where(
                     LearningDataDBObj.user_id == user_id,
                     LearningDataDBObj.word_id == word_id,
+                    LearningDataDBObj.lesson_id == lesson_id,
                 )
             ).scalar()
             return entry.score if entry else None
 
-    def update_user_scores(self, user_id: int, lesson_scores: Set[Score]) -> None:
+    def update_user_scores(self, user_id: int, lesson_scores: Set[Score], lesson_id: int) -> None:
         """
         Update user scores for the lesson scores which is a list of scores
         for each word_id. If the word with a score for the user is already in db,
@@ -284,31 +279,48 @@ class DatabaseManager:
 
             # Process each score
             for score in lesson_scores:
-                self.add_word_score(user_id, score)
+                self.add_word_score(user_id, score, lesson_id)
 
-    def retrieve_user_scores(self, user_id: int) -> Dict[int, Score]:
+    def get_latest_word_score_for_user(self, user_id: int) -> Dict[int, Score]:
         """
-        Retrieves word score data of a user from the learning_data table
+        Retrieves word score data of a user from 
         and returns them as a dictionary with keys of word ids and values of scores.
+        For each word, the most recent score is returned.
         Raises ValueDoesNotExistInDB error if non-existent user is requested.
         """
+        # TODO check this for efficiency
         with self.Session.begin() as session:
-            # First, check if the user exists in the database
-            if not session.get(UserDBObj, user_id):
-                raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
+            # Check if user exists
+            user_exists = session.get(UserDBObj, user_id)
+            if not user_exists:
+                raise ValueDoesNotExistInDB("User does not exist.")
 
-            # Query to fetch all scores for the user
-            scores_query = select(LearningDataDBObj).where(
+            # Query to retrieve the latest score for each word by this user
+            subquery = session.query(
+                LearningDataDBObj.word_id,
+                func.max(LearningDataDBObj.lesson_id).label('latest_lesson_id')
+            ).join(
+                LearningDataDBObj.lesson
+            ).filter(
                 LearningDataDBObj.user_id == user_id
-            )
-            scores = session.execute(scores_query).scalars().all()
+            ).group_by(
+                LearningDataDBObj.word_id
+            ).subquery()
 
-            # Convert the ORM objects to Score dataclass instances
-            result = {
-                score.word_id: Score(word_id=score.word_id, score=score.score)
-                for score in scores
-            }
-            return result
+            # Join the results with the LearningDataDBObj to get the scores
+            latest_scores = session.query(
+                LearningDataDBObj.word_id,
+                LearningDataDBObj.score
+            ).join(
+                subquery,
+                and_(
+                    LearningDataDBObj.word_id == subquery.c.word_id,
+                    LearningDataDBObj.lesson_id == subquery.c.latest_lesson_id
+                )
+            ).all()
+
+            # Convert to dictionary
+            return {word_id: Score(word_id, score) for word_id, score in latest_scores}
 
     """
     METHODS FOR WORKING WITH TEMPLATES
@@ -863,12 +875,13 @@ class DatabaseManager:
 
     def save_user_lesson_data(
         self, user_id: int, lesson_data: List[Evaluation]
-    ) -> None:
+    ) -> int:
         """
         Saves user lesson data into the database by saving into user_lessons table,
         adding the evaluations list in order into evaluations table, and saving each history entry
         into the history entries in order, with received scores going to entry_scores table
         Raises ValueDoesNotExistInDB if user does not exist.
+        TODO Returns lesson id.
         """
         with self.Session.begin() as session:
             if not session.get(UserDBObj, user_id):
@@ -965,7 +978,7 @@ class DatabaseManager:
                 raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
 
             # Get IDs of words that the user has already scored
-            user_scores = self.retrieve_user_scores(user_id)
+            user_scores = self.get_latest_word_score_for_user(user_id)
 
             # Retrieve words that are not scored by the user and match the POS criteria
             eligible_words_query = select(WordDBObj).where(
