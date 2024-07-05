@@ -63,6 +63,9 @@ class LexicalItem():
 
     def __hash__(self):
         return hash((self.item, self.pos, self.freq, self.id))
+    
+    def __str__(self):
+        return f"LexicalItem(item='{self.item}', pos='{self.pos}', freq={self.freq}, id={self.id})"
 
 @dataclass
 class Resource():
