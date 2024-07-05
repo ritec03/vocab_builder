@@ -295,6 +295,42 @@ class SpacedRepetitionLessonGenerator():
         lesson_plan = self.generate_lesson_plan(target_words)
         # return lesson
         return Lesson(self.user_id, target_words, lesson_plan)
+    
+    def process_scores(
+            self, 
+            scores: Dict[int, Dict[str, Union[Score, datetime]]]
+        ) -> Tuple[Dict[datetime, Set], Dict[datetime, Set]]:
+
+        timestamp_low_scores: Dict[datetime, Set] = {}
+        timestamp_high_scores: Dict[datetime, Set] = {}
+
+        for o in scores.values():
+            score_set = timestamp_high_scores if o["score"].score >= self.score_threshold else timestamp_low_scores
+            if o["timestamp"] not in score_set:
+                score_set[o["timestamp"]] = {o["score"]}
+            else:
+                score_set[o["timestamp"]].add(o["score"])
+
+        return timestamp_low_scores, timestamp_high_scores
+    
+    def get_scores_for_lesson(self, timestamp_scores: Dict[datetime, Set]) -> Tuple[List[Score], int, int]:
+        len_scores = len(set().union(*timestamp_scores.values())) if timestamp_scores else 0
+        scores_for_lesson: List[Score] = []
+        if len_scores <= 0:
+            return
+        timestamps = list(timestamp_scores.keys())
+        timestamps.sort()
+
+        for timestamp in timestamps:
+            for score in timestamp_scores[timestamp]:
+                if len(scores_for_lesson) < self.num_words_per_lesson:
+                    scores_for_lesson.append(score)
+                else:
+                    break
+
+        leftover_count = self.num_words_per_lesson - len(scores_for_lesson)
+        return scores_for_lesson, len_scores, leftover_count
+
 
     def choose_target_words(self, user_scores: Dict[int, Dict[str, Union[Score, datetime]]]) -> Set[LexicalItem]:
         """
@@ -310,57 +346,20 @@ class SpacedRepetitionLessonGenerator():
         * calculate the amount of new words to learn using method and add appropriate number
             of new words.
         """
-        # convert dict to list
-        timestamp_low_scores: Dict[datetime, Set] = {}
-        timestamp_high_scores: Dict[datetime, Set] = {}
+        timestamp_low_scores, timestamp_high_scores = self.process_scores(user_scores)
+        scores_of_words_to_include_in_lesson: List[Score] = []
+        low_scored_to_review, _, leftover_count = self.get_scores_for_lesson(timestamp_low_scores)
+        high_scores_to_select, num_of_all_high_scores, _ = self.get_scores_for_lesson(timestamp_high_scores)
 
-        for o in list(user_scores.values()):
-            if o["score"].score >= self.score_threshold:
-                if not o["timestamp"] in timestamp_high_scores:
-                    timestamp_high_scores[o["timestamp"]] = {o["score"]}
-                else:
-                    timestamp_high_scores[o["timestamp"]].add(o["score"])
-            else:
-                if not o["timestamp"] in timestamp_low_scores:
-                    timestamp_low_scores[o["timestamp"]] = {o["score"]}
-                else:
-                    timestamp_low_scores[o["timestamp"]].add(o["score"])
-
-
-        len_low_scores = len(set().union(*timestamp_low_scores.values())) if timestamp_low_scores else 0
-        len_high_scores = len(set().union(*timestamp_high_scores.values())) if timestamp_high_scores else 0
-
-        scores_for_lesson: List[Score] = []
-        low_score_timestamps = list(timestamp_low_scores.keys())
-        low_score_timestamps.sort()
-
-        if len_low_scores > 0:
-            for timestamp in low_score_timestamps:
-                for score in timestamp_low_scores[timestamp]:
-                    if len(scores_for_lesson) < self.num_words_per_lesson:
-                        scores_for_lesson.append(score)
-                    else:
-                        break
-
-        leftover_count = self.num_words_per_lesson - len(scores_for_lesson)
-        new_word_count = self.determine_num_of_new_words(leftover_count, len_high_scores)
+        num_new_words_to_review = self.determine_num_of_new_words(leftover_count, num_of_all_high_scores)
+        scores_of_words_to_include_in_lesson = low_scored_to_review + high_scores_to_select[:(self.words_per_lesson - len(low_scored_to_review) - num_new_words_to_review)]        
         
-        high_score_timestamps = list(timestamp_high_scores.keys())
-        high_score_timestamps.sort()
-        if len_high_scores > 0:
-            for timestamp in high_score_timestamps:
-                for score in timestamp_high_scores[timestamp]:
-                    if len(scores_for_lesson) <= leftover_count - new_word_count:
-                        scores_for_lesson.append(score)
-                    else:
-                        break
-
-        words_for_review = set([DB.get_word_by_id(score.word_id) for score in scores_for_lesson])
+        words_for_review = set([DB.get_word_by_id(score.word_id) for score in scores_of_words_to_include_in_lesson])
         logger.info("Words for review are %s", ", ".join(map(str, list(words_for_review))))
 
         # Retrieve new words if needed
-        if new_word_count > 0:
-            new_words = DB.retrieve_words_for_lesson(self.user_id, new_word_count)
+        if num_new_words_to_review > 0:
+            new_words = DB.retrieve_words_for_lesson(self.user_id, num_new_words_to_review)
         else:
             new_words = set()
 
