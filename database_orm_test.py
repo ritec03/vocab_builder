@@ -423,8 +423,8 @@ class TestRetrieveUserScores(TestMixin, unittest.TestCase):
         self.assertIsInstance(scores, dict)
         self.assertEqual(len(scores), 2)  # Expecting scores for 2 words
         # Check specific scores
-        self.assertEqual(scores.get(self.word_1.id).score, 5)
-        self.assertEqual(scores.get(self.word_2.id).score, 8)
+        self.assertEqual(scores.get(self.word_1.id)["score"].score, 5)
+        self.assertEqual(scores.get(self.word_2.id)["score"].score, 8)
 
     def test_two_scores_one_updated(self):
         NEW_SCORE = 1
@@ -438,8 +438,8 @@ class TestRetrieveUserScores(TestMixin, unittest.TestCase):
         self.assertIsInstance(scores, dict)
         self.assertEqual(len(scores), 2)  # Expecting scores for 2 words
         # Check specific scores
-        self.assertEqual(scores.get(self.word_1.id).score, NEW_SCORE)
-        self.assertEqual(scores.get(self.word_2.id).score, 8)
+        self.assertEqual(scores.get(self.word_1.id)["score"].score, NEW_SCORE)
+        self.assertEqual(scores.get(self.word_2.id)["score"].score, 8)
 
     def test_user_without_scores(self):
         """

@@ -75,7 +75,7 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 
 class DatabaseManager:
     def __init__(self, db_path: str):
-        engine = create_engine("sqlite:///" + db_path, echo=True)
+        engine = create_engine("sqlite:///" + db_path, echo=False)
         Base.metadata.create_all(engine)
         self.Session = sessionmaker(engine)
 
@@ -281,36 +281,42 @@ class DatabaseManager:
             for score in lesson_scores:
                 self.add_word_score(user_id, score, lesson_id)
 
-    def get_latest_word_score_for_user(self, user_id: int) -> Dict[int, Score]:
+    def get_latest_word_score_for_user(self, user_id: int) -> Dict[int, Dict]:
         """
-        Retrieves word score data of a user from 
-        and returns them as a dictionary with keys of word ids and values of scores.
-        For each word, the most recent score is returned.
+        Retrieves word score data of a user from the learning_data table
+        and returns them as a dictionary with keys of word ids and values as dictionaries of scores and timestamps.
+        For each word, the most recent score along with the corresponding lesson timestamp is returned.
         Raises ValueDoesNotExistInDB error if non-existent user is requested.
+        
+        Returns:
+            Dict[int word_id, {"score": Score, "timestamp": timestamp}]
         """
-        # TODO check this for efficiency
+        # TODO check for efficiency
+        # TODO add more tests to check returning words
         with self.Session.begin() as session:
             # Check if user exists
             user_exists = session.get(UserDBObj, user_id)
             if not user_exists:
                 raise ValueDoesNotExistInDB("User does not exist.")
 
-            # Query to retrieve the latest score for each word by this user
+            # Define a subquery to get the latest lesson_id for each word_id for the given user
             subquery = session.query(
                 LearningDataDBObj.word_id,
                 func.max(LearningDataDBObj.lesson_id).label('latest_lesson_id')
-            ).join(
-                LearningDataDBObj.lesson
             ).filter(
                 LearningDataDBObj.user_id == user_id
             ).group_by(
                 LearningDataDBObj.word_id
             ).subquery()
 
-            # Join the results with the LearningDataDBObj to get the scores
+            # Join the LearningDataDBObj with the UserLessonDBObj to get the timestamps
             latest_scores = session.query(
                 LearningDataDBObj.word_id,
-                LearningDataDBObj.score
+                LearningDataDBObj.score,
+                UserLessonDBObj.timestamp
+            ).join(
+                UserLessonDBObj,
+                LearningDataDBObj.lesson_id == UserLessonDBObj.id
             ).join(
                 subquery,
                 and_(
@@ -319,8 +325,11 @@ class DatabaseManager:
                 )
             ).all()
 
-            # Convert to dictionary
-            return {word_id: Score(word_id, score) for word_id, score in latest_scores}
+            # Convert to dictionary with scores and timestamps
+            return {
+                word_id: {"score": Score(word_id, score), "timestamp": timestamp}
+                for word_id, score, timestamp in latest_scores
+            }
 
     """
     METHODS FOR WORKING WITH TEMPLATES
