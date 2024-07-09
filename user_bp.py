@@ -4,6 +4,8 @@ from database_orm import DatabaseManager, ValueDoesNotExistInDB
 
 users_bp = Blueprint('users', __name__)
 
+# TODO add guards for data
+
 @users_bp.route('/users', methods=['POST'])
 def create_user():
     data = request.json

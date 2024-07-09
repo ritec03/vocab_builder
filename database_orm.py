@@ -178,13 +178,15 @@ class DatabaseManager:
         session = self.Session()
         if not isinstance(user_name, str) or len(user_name) > MAX_USER_NAME_LENGTH:
             raise ValueError("Username is not a string or too long.")
+        
         try:
-            user = UserDBObj(user_name=user_name)
-            session.add(user)
-            session.flush()
-            session.commit()
-            return user.id
+            with session.begin():
+                user = UserDBObj(user_name=user_name)
+                session.add(user)
+                session.flush()
+                return user.id
         except IntegrityError as e:
+            session.rollback()
             raise ValueError(f"User '{user_name}' already exists in the database.")
 
     def get_user_by_id(self, user_id: int) -> Optional[User]:
@@ -223,14 +225,21 @@ class DatabaseManager:
         Raises:
             ValueDoesNotExistInDB if the user with user_id does not exist
         """
-        with self.Session.begin() as session:
-            user = session.get(UserDBObj, user_id)
+        # with self.Session.begin() as session:
+        session = self.Session()
+        try:
+            with session.begin():
+                user = session.get(UserDBObj, user_id)
             if not user:
                 raise ValueDoesNotExistInDB(f"User with ID {user_id} does not exist.")
             else:
                 session.delete(user)
                 session.flush()
+                session.commit()
                 logger.info(f"User with ID {user_id} removed successfully.")
+        except:
+            session.rollback()
+            raise
 
     def add_word_score(self, user_id: int, score: Score, lesson_id: int):
         """

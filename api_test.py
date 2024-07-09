@@ -23,6 +23,39 @@ class UserBlueprintTestCase(unittest.TestCase):
         self.assertEqual(user.id, 1)
         res2 = self.client.post('/users', json={'user_name': 'abc'})
         self.assertEqual(res2.status_code, 409)
+
+    def test_get_user(self):
+        """Test API can get a user (GET request)."""
+        post_res = self.client.post('/users', json={'user_name': 'testuser'})
+        user_id = post_res.get_json()['user_id']
+        res = self.client.get(f'/users/{user_id}')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('testuser', res.get_json()['user_name'])
+    
+    def test_non_existent_user(self):
+        """Test API for non existent user getting"""
+        res = self.client.get(f'/users/{999}')
+        self.assertEqual(res.status_code, 404)
+
+    def test_delete_user(self):
+        """Test API can delete an existing user (DELETE request)."""
+        post_res = self.client.post('/users', json={'user_name': 'testuser'})
+        user_id = post_res.get_json()['user_id']
+        res = self.client.delete(f'/users/{user_id}')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('User deleted', res.get_json()['status'])
+
+    def test_delete_nonexistent_user(self):
+        """Test API can delete a non-existing user (DELETE request)."""
+        res = self.client.delete(f'/users/{999}')
+        self.assertEqual(res.status_code, 404)
+
+    
+    def test_delete_nonexistent_user(self):
+        """Test API can delete a non-existing user (DELETE request)."""
+        res = self.client.delete(f'/users/{999}')
+        self.assertEqual(res.status_code, 404)
+
         
 
 if __name__ == '__main__':
