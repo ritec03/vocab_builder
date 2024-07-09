@@ -9,7 +9,7 @@ from sqlalchemy import (
     select,
     event,
 )
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from data_structures import (
@@ -45,6 +45,7 @@ from database_objects import (
 from evaluation import Evaluation, HistoryEntry
 from task import Task, get_task_type_class
 from task_template import TaskTemplate
+from flask import Flask
 import logging
 
 logger = logging.getLogger(__name__)
@@ -74,10 +75,19 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.close()
 
 class DatabaseManager:
-    def __init__(self, db_path: str):
-        engine = create_engine("sqlite:///" + db_path, echo=False)
+    def __init__(self, app: Flask):
+        self.Session = None
+        if app: 
+            self.init_app(app)
+
+    def init_app(self, app: Flask):
+        engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], echo=False)
         Base.metadata.create_all(engine)
-        self.Session = sessionmaker(engine)
+        self.Session = scoped_session(sessionmaker(bind=engine))
+        app.teardown_appcontext(self.shutdown_session)
+
+    def shutdown_session(self, exception=None):
+        self.Session.remove()
 
     def add_words_to_db(self, word_list: List[Tuple[str, str, int]]) -> List[int]:
         """
@@ -165,16 +175,17 @@ class DatabaseManager:
         Returns:
             int: The user ID of the newly inserted user.
         """
-        with self.Session.begin() as session:
-            if not isinstance(user_name, str) or len(user_name) > MAX_USER_NAME_LENGTH:
-                raise ValueError("Username is not a string or too long.")
-            try:
-                user = UserDBObj(user_name=user_name)
-                session.add(user)
-                session.flush()
-                return user.id
-            except IntegrityError as e:
-                raise ValueError(f"User '{user_name}' already exists in the database.")
+        session = self.Session()
+        if not isinstance(user_name, str) or len(user_name) > MAX_USER_NAME_LENGTH:
+            raise ValueError("Username is not a string or too long.")
+        try:
+            user = UserDBObj(user_name=user_name)
+            session.add(user)
+            session.flush()
+            session.commit()
+            return user.id
+        except IntegrityError as e:
+            raise ValueError(f"User '{user_name}' already exists in the database.")
 
     def get_user_by_id(self, user_id: int) -> Optional[User]:
         """
@@ -188,17 +199,17 @@ class DatabaseManager:
             UserDBObj: user database object
             None if no user is found
         """
-        with self.Session.begin() as session:
-            statement = select(UserDBObj).where(UserDBObj.id == user_id)
-            rows = session.scalars(statement).all()
-            if len(rows) == 0:
-                return None
-            elif len(rows) == 1:
-                user_obj = rows[0]
-                user = User(user_obj.id, user_obj.user_name)
-                return user
-            else:
-                raise KeyError(f"User id {user_id} is not unique.")
+        session = self.Session()
+        statement = select(UserDBObj).where(UserDBObj.id == user_id)
+        rows = session.scalars(statement).all()
+        if len(rows) == 0:
+            return None
+        elif len(rows) == 1:
+            user_obj = rows[0]
+            user = User(user_obj.id, user_obj.user_name)
+            return user
+        else:
+            raise KeyError(f"User id {user_id} is not unique.")
 
     def remove_user(self, user_id: int) -> None:
         """
@@ -1006,5 +1017,5 @@ class DatabaseManager:
                 for word_obj in eligible_words
             }
 
-TEST_DB_FILE = "test_database.db"
-DB = DatabaseManager(TEST_DB_FILE)
+# TEST_DB_FILE = "test_database.db"
+# DB = DatabaseManager(TEST_DB_FILE)
