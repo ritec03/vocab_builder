@@ -1,5 +1,5 @@
 import json
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 import pandas as pd
 from sqlalchemy import (
     and_,
@@ -14,6 +14,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from data_structures import (
     MAX_USER_NAME_LENGTH,
+    CorrectionStrategy,
     LexicalItem,
     Resource,
     Score,
@@ -902,6 +903,73 @@ class DatabaseManager:
             # Delete the task itself
             session.delete(task_to_remove)
 
+    """
+    METHODS FOR WORKING WITH LESSONS
+    """
+
+    def save_lesson_plan(
+            self,
+            user_id: int, 
+            lesson_plan: List[Tuple[Task, List[Union[CorrectionStrategy, Task]]]]
+        ) -> int:
+        """
+        Initializes a lesson and saves lesson plan for the lesson. 
+        Raises:
+            ValueDoesNotExistInDB if user is not found
+            GeneralDatabaseError for any other error
+        Params:
+            lesson_plan: a list of (task, correction strategies for task)
+            user_id : int
+        Returns:
+            int lesson_id of the initialized lesson
+        """
+
+    def save_evaluation_for_task(
+            self, 
+            user_id: int, 
+            lesson_id: int, 
+            order: Tuple[int,int],
+            history_entry: HistoryEntry
+    ):
+        """
+        Create evaluation for the task in the lesson at (sequence_num, attempt_num)
+        in lesson plan if it does not exist. Add history entry to that evaluation.
+        Mark the task as completed in the lesson plan for the task.
+        Raise:
+            GeneralDatabaseError if addition fails
+        """
+        pass
+
+    def get_next_task_for_lesson(
+            user_id: int, 
+            lesson_id: int
+        ) -> Optional[Dict[str, Union[Task, Evaluation, Tuple[int,int]]]]:
+        """
+        Get the next task in the lesson for the user, if the task is defined. If
+        the next task is not defined in the the lesson plan (the case for a retry according
+        to the correction strategy), then return Evaluation object for the task which
+        can be used for task generation downstream.
+
+        Returns a dictionary of form:
+            {
+                "order" : (int,int)
+                "task" : Task or None
+                "eval" : Evaluation or None
+            }
+            None if there are no more tasks in the lesson to be completed.
+        """
+    
+    def update_lesson_plan_with_task(
+            user_id: int, 
+            lesson_id: int, 
+            task: Task,
+            order: Tuple[int, int]
+        ):
+        """
+        Updates the lesson plan with the task at the sequence num and attempt num.
+        Raises error if task there are inconsistencies.
+        """
+    
     def save_user_lesson_data(
         self, user_id: int, lesson_data: List[Evaluation]
     ) -> int:

@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -18,6 +19,7 @@ from sqlalchemy.orm import (
     relationship,
 )
 from data_structures import (
+    CorrectionStrategy,
     Language,
     TaskType,
 )
@@ -202,9 +204,41 @@ class UserLessonDBObj(Base):
         default=func.now(), server_default=func.now(), type_=TIMESTAMP
     )
     evaluations: Mapped[List["EvaluationDBObj"]] = relationship("EvaluationDBObj")
-    scores = relationship("LearningDataDBObj", back_populates="lesson", cascade="all, delete")
+    scores: Mapped[List["LearningDataDBObj"]] = relationship("LearningDataDBObj", back_populates="lesson", cascade="all, delete")
+    lesson_plan: Mapped["LessonPlanDBObj"] = relationship("LessonPlanDBObj", cascade="all, delete")
 
     __table_args__ = (Index("idx_timestamp_desc", timestamp.desc()),) # access most recent lessons
+
+
+class LessonPlanDBObj(Base):
+    """
+    Contains lesson plans for users that include tasks contained, with
+    error correction included, task sequence and completion.
+    """
+    __tablename__ = "lesson_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lesson_id = mapped_column(Integer, ForeignKey("user_lessons.id"))
+
+    tasks: Mapped[List["LessonPlanTaskDBObj"]] = relationship("LessonPlanTaskDBObj", cascade="all, delete")
+
+
+class LessonPlanTaskDBObj(Base):
+    """
+    Contains association between tasks and lesson plan.
+    """
+    __tablename__ = "lesson_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lesson_plan_id = mapped_column(Integer, ForeignKey("user_lessons.id"))
+    sequence_num: Mapped[int]
+    attempt_num: Mapped[int]
+    task_id = mapped_column(Integer, ForeignKey("tasks.id"), nullable=True)
+    error_correction = mapped_column(Enum(CorrectionStrategy, validate_strings=True, nullable=True))
+    completed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    __table_args__ = (UniqueConstraint("lesson_plan_id", "sequence_num", "attempt_num"))
+
 
 class EvaluationDBObj(Base):
     """
@@ -217,7 +251,7 @@ class EvaluationDBObj(Base):
     lesson_id = mapped_column(Integer, ForeignKey("user_lessons.id"))
     sequence_number: Mapped[int] = (
         mapped_column()
-    )  # Ensures sequence numbers are unique within each lesson
+    ) 
     history_entries: Mapped[List["HistoryEntrieDBObj"]] = relationship(
         "HistoryEntrieDBObj"
     )
@@ -239,7 +273,7 @@ class HistoryEntrieDBObj(Base):
     __table_args__ = (UniqueConstraint("evaluation_id", "sequence_number"),)
 
 
-class EntryScoreDBObj(Base):
+class EntryScoreDBObj(Base): # NOTE potentially remove this table
     """
     Details the scores received by users for specific words within history entries.
     """

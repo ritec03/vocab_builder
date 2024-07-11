@@ -3,8 +3,8 @@ from datetime import datetime
 from math import floor
 from typing import Dict, List, Optional, Set, Tuple, Type, Union
 from data_structures import EXERCISE_THRESHOLD, NUM_WORDS_PER_LESSON, CorrectionStrategy, LexicalItem, Score
-from database_orm import DB, DatabaseManager
-from evaluation import Evaluation
+from database_orm import DatabaseManager
+from evaluation import Evaluation, HistoryEntry
 from task import Task
 from task_generator import TaskFactory
 from itertools import chain
@@ -86,6 +86,32 @@ def get_strategy_object(strategy_name: CorrectionStrategy) -> Type[ErrorCorrecti
         return ExplanationStrategy
     else:
         raise ValueError("Invalid correction strategy name ", strategy_name)
+    
+class LessonTask():
+    def __init__(self, user_id: int, db_manager: DatabaseManager, lesson_id: int):
+        self.user_id = user_id
+        self.db_manager = db_manager
+        self.lesson_id = lesson_id
+
+    def evaluate_task(self, answer: str, task_id: int, order: Tuple[int, int]) -> HistoryEntry:
+        """
+        Evaluates the task situated at the order within lesson plan
+        according to its evaluation policy. Saves the evaluation for the task
+        in lesson evaluation and updates lesson plan.
+        Returns history entry representing evaluation of the task.
+        """
+        pass
+
+    def get_next_task(self) -> Optional[Tuple[Task, Tuple[int, int]]]:
+        """
+        Accesses the lesson and returns the next task in sequence.
+        If the task is not yet defined, generates it and returns it.
+        Returns:
+            tuple of task and its order within the lesson plan.
+            None if there are no more tasks in the lesson.
+        """
+        pass
+
 
 class ExerciseSequence:
     """
@@ -138,6 +164,7 @@ class ExerciseSequence:
         Records user response for the task, runs evaluations and appends evaluation
         to the evaluation object.
         """
+        # TODO change it to adapt for web app
         user_response = input(task.produce_task())
         evaluation_result = task.evaluate_user_input(user_response)
         evaluation.add_entry(task, user_response, evaluation_result)
@@ -207,7 +234,8 @@ class Lesson:
         lesson_id = DB.save_user_lesson_data(self.user_id, self.evaluation_list)
         return lesson_id
 
-    def perform_lesson(self): 
+    def perform_lesson(self):
+        # TODO change for web app so that it performs a certain step in the lesson
         """
         Performs tasks for the entire lesson plan in sequence,
         stores evaluations.
@@ -286,15 +314,18 @@ class SpacedRepetitionLessonGenerator():
     def __init__(self, user_id: int):
         self.user_id = user_id
 
-    def generate_lesson(self) -> Lesson:
+    def generate_lesson(self) -> Tuple[Task, List[Union[CorrectionStrategy, Task]]]:
+        """
+        Returns the first tuple of the lesson plan.
+        """
         user_word_scores = DB.get_latest_word_score_for_user(self.user_id)
         logger.info(user_word_scores)
         # choose target words
         target_words = self.choose_target_words(user_word_scores)
         # generate lesson plan
-        lesson_plan = self.generate_lesson_plan(target_words)
-        # return lesson
-        return Lesson(self.user_id, target_words, lesson_plan)
+        lesson_plan = self.generate_and_savelesson_plan(target_words)
+        # return the first tuple in the lesson plan
+        return lesson_plan[0]
     
     def process_scores(
             self, 
@@ -393,23 +424,28 @@ class SpacedRepetitionLessonGenerator():
         return new_words_num if high_scores_count >= leftover_count - new_words_num else leftover_count - high_scores_count
             
     
-    def generate_lesson_plan(self, words:Set[LexicalItem]) -> List[Tuple[Task, List[str]]]:
-        # NOTE create a dummy plan by using one-word items only for now and no error correction
-        # NOTE for now create lesson task which partitions target words without overlaps, i.e.
-        # a target word is targeted by one task only
-        # TODO think about how to do it.
-        task_factory = TaskFactory()
-        lesson_plan = []
-        # TODO devise a strategy of choosing correction strategy.
-        strategy_sequence = [
-            CorrectionStrategy.EquivalentTaskStrategy, 
-            CorrectionStrategy.EquivalentTaskStrategy, 
-            CorrectionStrategy.EquivalentTaskStrategy
-        ]
-        for word in list(words):
-            task = task_factory.get_task_for_word({word})
-            lesson_plan.append((task, strategy_sequence))
-        return lesson_plan
+    def generate_and_savelesson_plan(self, words:Set[LexicalItem]) -> List[Tuple[Task, List[Union[CorrectionStrategy, Task]]]]:
+        """
+        Generates and saves lesson plan for the user based on the targetwords.
+        Returns the lesson plan which is a list of tuples, where each tuple 
+        has the task and a list of correction tasks or strategies if tasks are not available.
+        """
+        # # NOTE create a dummy plan by using one-word items only for now and no error correction
+        # # NOTE for now create lesson task which partitions target words without overlaps, i.e.
+        # # a target word is targeted by one task only
+        # # TODO think about how to do it.
+        # task_factory = TaskFactory()
+        # lesson_plan = []
+        # # TODO devise a strategy of choosing correction strategy.
+        # strategy_sequence = [
+        #     CorrectionStrategy.EquivalentTaskStrategy, 
+        #     CorrectionStrategy.EquivalentTaskStrategy, 
+        #     CorrectionStrategy.EquivalentTaskStrategy
+        # ]
+        # for word in list(words):
+        #     task = task_factory.get_task_for_word({word})
+        #     lesson_plan.append((task, strategy_sequence))
+        # return lesson_plan
 
 class Session():
     pass
