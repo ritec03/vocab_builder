@@ -907,13 +907,31 @@ class DatabaseManager:
     METHODS FOR WORKING WITH LESSONS
     """
 
+    def retrieve_lesson(self, user_id: int) -> Optional[Dict[str, Union[int, Task]]]:
+        """
+        Retrieves lesson_id and first task for a lesson if there is
+        a new uncompleted lesson for the user. Otherwise, returns None
+
+        Assumes the user exists.
+
+        Returns:
+            {
+                "lesson_id": int
+                "task": {
+                    "order": (1,1)
+                    "first_task": Task
+                }
+            }
+        """
+
     def save_lesson_plan(
             self,
             user_id: int, 
             lesson_plan: List[Tuple[Task, List[Union[CorrectionStrategy, Task]]]]
         ) -> int:
         """
-        Initializes a lesson and saves lesson plan for the lesson. 
+        Initializes a lesson and saves lesson plan for the lesson.
+        Checks if a new lesson already exists for the user.
         Raises:
             ValueDoesNotExistInDB if user is not found
             GeneralDatabaseError for any other error
@@ -921,7 +939,13 @@ class DatabaseManager:
             lesson_plan: a list of (task, correction strategies for task)
             user_id : int
         Returns:
-            int lesson_id of the initialized lesson
+            {
+                "lesson_id": int
+                "task": {
+                    "order": (0,0)
+                    "first_task": Task
+                }
+            }
         """
 
     def save_evaluation_for_task(
@@ -940,6 +964,16 @@ class DatabaseManager:
         """
         pass
 
+    def get_evaluation_for_task(
+            self,
+            user_id: int,
+            lesson_id: int,
+            order: Tuple[int, int]
+    ) -> Evaluation:
+        """
+        Returns evaluation object for the task at sequence number order[0].
+        """
+
     def get_next_task_for_lesson(
             user_id: int, 
             lesson_id: int
@@ -950,11 +984,15 @@ class DatabaseManager:
         to the correction strategy), then return Evaluation object for the task which
         can be used for task generation downstream.
 
+        If there are no more tasks, marks the lesson as completed.
+
         Returns a dictionary of form:
             {
                 "order" : (int,int)
                 "task" : Task or None
                 "eval" : Evaluation or None
+                "error_correction": CorrectionStrategy | None - strategy according 
+                    to which this task is chosen
             }
             None if there are no more tasks in the lesson to be completed.
         """

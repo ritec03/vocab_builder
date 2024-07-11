@@ -196,6 +196,9 @@ class UserLessonDBObj(Base):
     """
     Records lessons undertaken by users, storing when each lesson was taken.
     """
+    # NOTE lesson is marked as completed only if all the tasks are marked as completed.
+    # NOTE timestamp only appears when the lesson is completed
+    # NOTE there can be only one uncompleted lesson at a time for now
     __tablename__ = "user_lessons"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -206,6 +209,7 @@ class UserLessonDBObj(Base):
     evaluations: Mapped[List["EvaluationDBObj"]] = relationship("EvaluationDBObj")
     scores: Mapped[List["LearningDataDBObj"]] = relationship("LearningDataDBObj", back_populates="lesson", cascade="all, delete")
     lesson_plan: Mapped["LessonPlanDBObj"] = relationship("LessonPlanDBObj", cascade="all, delete")
+    completed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     __table_args__ = (Index("idx_timestamp_desc", timestamp.desc()),) # access most recent lessons
 
