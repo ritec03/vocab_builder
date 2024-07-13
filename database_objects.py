@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     JSON,
     TIMESTAMP,
+    event
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -195,23 +196,29 @@ class TaskResourceDBObj(Base):
 class UserLessonDBObj(Base):
     """
     Records lessons undertaken by users, storing when each lesson was taken.
+    The timestamp is recorded only when the lesson is marked as completed.
+    There can be only one uncompleted lesson at a time for now.
     """
-    # NOTE lesson is marked as completed only if all the tasks are marked as completed.
-    # NOTE timestamp only appears when the lesson is completed
-    # NOTE there can be only one uncompleted lesson at a time for now
     __tablename__ = "user_lessons"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id = mapped_column(Integer, ForeignKey("users.id"))
-    timestamp: Mapped[datetime] = mapped_column(
-        default=func.now(), server_default=func.now(), type_=TIMESTAMP
-    )
-    evaluations: Mapped[List["EvaluationDBObj"]] = relationship("EvaluationDBObj")
+    timestamp: Mapped[datetime] = mapped_column(type_=TIMESTAMP, nullable=True)  # No default value initially
+    evaluations: Mapped[List["EvaluationDBObj"]] = relationship("EvaluationDBObj", cascade="all, delete")
     scores: Mapped[List["LearningDataDBObj"]] = relationship("LearningDataDBObj", back_populates="lesson", cascade="all, delete")
     lesson_plan: Mapped["LessonPlanDBObj"] = relationship("LessonPlanDBObj", cascade="all, delete")
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    __table_args__ = (Index("idx_timestamp_desc", timestamp.desc()),) # access most recent lessons
+    __table_args__ = (Index("idx_timestamp_desc", timestamp.desc()),) # This index is useful for accessing most recent completed lessons
+
+# TODO test this event listener
+@event.listens_for(UserLessonDBObj, 'before_update', propagate=True)
+def receive_before_update(mapper, connection, target):
+    """
+    SQLAlchemy event listener that sets the timestamp when the lesson is marked as completed.
+    """
+    if target.completed and not target.timestamp:
+        target.timestamp = func.now()
 
 
 class LessonPlanDBObj(Base):
@@ -231,17 +238,17 @@ class LessonPlanTaskDBObj(Base):
     """
     Contains association between tasks and lesson plan.
     """
-    __tablename__ = "lesson_plans"
+    __tablename__ = "lesson_plan_tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    lesson_plan_id = mapped_column(Integer, ForeignKey("user_lessons.id"))
+    lesson_plan_id = mapped_column(Integer, ForeignKey("lesson_plans.id"))
     sequence_num: Mapped[int]
     attempt_num: Mapped[int]
     task_id = mapped_column(Integer, ForeignKey("tasks.id"), nullable=True)
     error_correction = mapped_column(Enum(CorrectionStrategy, validate_strings=True, nullable=True))
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    __table_args__ = (UniqueConstraint("lesson_plan_id", "sequence_num", "attempt_num"))
+    __table_args__ = (UniqueConstraint("lesson_plan_id", "sequence_num", "attempt_num"),)
 
 
 class EvaluationDBObj(Base):
@@ -253,6 +260,7 @@ class EvaluationDBObj(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     lesson_id = mapped_column(Integer, ForeignKey("user_lessons.id"))
+    # TODO make this reference tasks table sequence number
     sequence_number: Mapped[int] = (
         mapped_column()
     ) 
@@ -270,6 +278,7 @@ class HistoryEntrieDBObj(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     evaluation_id = mapped_column(Integer, ForeignKey("evaluations.id"))
+    # TODO rename to attempt
     sequence_number: Mapped[int] = mapped_column()
     task_id = mapped_column(Integer, ForeignKey("tasks.id"))
     response: Mapped[str]

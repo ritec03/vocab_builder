@@ -58,6 +58,24 @@ class Task(ABC):
         """
         return self.evaluation_method.evaluate(self.correctAnswer, user_input, self.learning_items)
     
+    # TODO change to json methods to be more consistent
+    def to_json(self):
+        converted_resources = []
+        for key in self.resources:
+            converted_res = {
+                "id": self.resources[key].resource_id,
+                "resource": self.resources[key].resource,
+                "target_words": [word.to_json() for word in self.resources[key].target_words]
+            }
+            converted_resources.append(converted_res)
+        return {
+            'template': self.template.to_json(),  # Assuming template has to_json method
+            'resources': converted_resources,
+            'learning_items': [item.to_json() for item in self.learning_items],
+            'correctAnswer': self.correctAnswer,
+            'id': self.id
+        }
+    
 class OneWayTranslaitonTask(Task):
     """
     Defines a simple translation task that contains a task description,
@@ -124,6 +142,12 @@ class FourChoiceTask(Task):
         if user_input not in [a.name for a in list(FourChoiceAnswer)]:
             raise ValueError("User input is not one of four options.")
         return super().evaluate_user_input(user_input)
+
+    # TODO change to json methods to be more consistent
+    def to_json(self):
+        repr = super().to_json()
+        repr["correctAnswer"] = self.correctAnswer.name
+        return repr
     
 def get_task_type_class(task_type: TaskType) -> Type[Task]:
     if task_type == TaskType.FOUR_CHOICE:
@@ -132,3 +156,4 @@ def get_task_type_class(task_type: TaskType) -> Type[Task]:
         return OneWayTranslaitonTask
     else:
         raise ValueError("Unknown task type ", task_type)
+    

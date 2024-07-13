@@ -1,10 +1,12 @@
+import json
+import logging
 from flask import Blueprint, request, jsonify, current_app
 
 from database_orm import DatabaseManager, ValueDoesNotExistInDB
 from exercise import LessonTask, SpacedRepetitionLessonGenerator
+logger = logging.getLogger(__name__)
 
 lessons_bp = Blueprint('lessons', __name__)
-
 
 @lessons_bp.route('/users/<int:user_id>/lessons', methods=['POST'])
 def request_lesson(user_id: int):
@@ -31,14 +33,23 @@ def request_lesson(user_id: int):
             lesson_gen = SpacedRepetitionLessonGenerator(user_id, db_manager)
             try:
                 lesson_plan = lesson_gen.generate_lesson()
-            except:
+            except Exception as e:
+                logger.error(f"Failed to generate lesson. Error: {str(e)}")
                 return jsonify({"error": "Failed to generate lesson."}), 500
             try:
                 gen_lesson_head = db_manager.save_lesson_plan(user_id, lesson_plan)
             except:
+                logger.error(f"Failed to save lesson. Error: {str(e)}")
                 return jsonify({"error": "Failed to save the lesson."}), 500
+            task = gen_lesson_head["task"]["first_task"]
+            if not task:
+                logger.warning("Task is empty.")
+            gen_lesson_head["task"]["first_task"] = task.to_json()
+            if not gen_lesson_head["task"]["first_task"]:
+                logger.warning("Task is empty after converting to dict.")
             return jsonify(gen_lesson_head), 201
-    except:
+    except Exception as e:
+        logger.error(f"General error occured. Error: {str(e)}")
         return jsonify({"error": "Server encountered an error."}), 500
 
 
@@ -84,6 +95,14 @@ def submit_answer(user_id: int, lesson_id: int):
             next_task = lesson_task.get_next_task()
         except:
             return jsonify({"error": "Failed to retrieve the next task."}), 500
-        return jsonify({"score": list(history_entry.evaluation_result), "next_task": next_task}), 201
-    except:
+        
+        if not next_task:
+            return jsonify({"score": list(history_entry.evaluation_result), "next_task": None})
+        else:
+            return jsonify({"score": list(history_entry.evaluation_result), "next_task": {
+                "order": next_task["order"],
+                "task": next_task["task"].to_json(),
+            }}), 201
+    except Exception as e:
+        logger.error(f"General error occured. Error: {str(e)}")
         return jsonify({"error": "Server encountered an error."}), 500

@@ -146,5 +146,19 @@ class TaskTemplate():
             attributes['__annotations__']['answer'] = FourChoiceAnswer
 
         return attributes
+    
+    # TODO change to json methods to be more consistent.
+    def to_json(self):
+        return {
+            'id': self.id,
+            'template': self._template.template,  # Get the template string
+            'description': self.description,
+            'examples': self.examples,
+            'parameter_description': self.parameter_description,
+            'task_type': self.task_type.name, 
+            'starting_language': self.starting_language.name,  
+            'target_language': self.target_language.name, 
+        }
+
 
     

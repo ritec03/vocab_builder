@@ -1,7 +1,16 @@
+import logging
 import os
 from flask import Flask
 from database_orm import DatabaseManager
 from user_bp import users_bp
+from lesson_bp import lessons_bp
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    filename='test_log.log', 
+    encoding='utf-8', 
+    level=logging.DEBUG
+)
 
 def create_app(test_config=None):
     # create and configure the app
@@ -26,5 +35,6 @@ def create_app(test_config=None):
 
     app.db_manager = DatabaseManager(app)
     app.register_blueprint(users_bp)
+    app.register_blueprint(lessons_bp)
 
     return app
