@@ -4,6 +4,7 @@ from flask import Flask
 from database_orm import DatabaseManager
 from user_bp import users_bp
 from lesson_bp import lessons_bp
+from flask_cors import CORS
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -37,4 +38,10 @@ def create_app(test_config=None):
     app.register_blueprint(users_bp)
     app.register_blueprint(lessons_bp)
 
+    CORS(app)
+
     return app
+
+if __name__ == "__main__":
+    app = create_app()
+    app.run(port=8000, debug=True)
