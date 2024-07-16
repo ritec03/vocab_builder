@@ -52,11 +52,6 @@ interface SubmitTaskResponse {
         task: Task
     } | null 
 }
-// TODOs
-// # erase the form after completion???
-// # somehow indicate that the task is being loaded?
-// # Handle logic of conitnue button on Score card
-// # show score card after each task??
 
 const LessonPage: React.FC = () => {
     const params = useParams();
@@ -66,6 +61,8 @@ const LessonPage: React.FC = () => {
     const [currentTask, setCurrentTask] = useState<{task: Task, order: [number,number]} | null>(null);
     const [score, setScore] = useState<any>(null);
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [checking, setChecking] = useState(false);
 
     useEffect(() => {
         const fetchLesson = async () => {
@@ -73,8 +70,10 @@ const LessonPage: React.FC = () => {
                 const response: {data: LessonHead} = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/lessons`);
                 setLesson(response.data);
                 setCurrentTask({task:response.data.task.first_task, order: response.data.task.order});
+                setLoading(false);
             } catch (error) {
                 setError('Failed to fetch lesson.');
+                setLoading(false);
             }
         };
 
@@ -83,6 +82,7 @@ const LessonPage: React.FC = () => {
 
     const handleTaskSubmit = async (answer: string) => {
         if (lesson && currentTask) {
+            setChecking(true);
             try {
                 const response: {data: SubmitTaskResponse} = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/lessons/${lesson.lesson_id}/tasks/submit`, {
                     task_id: currentTask.task.id,
@@ -91,8 +91,10 @@ const LessonPage: React.FC = () => {
                 });
                 setScore(response.data.score);
                 setCurrentTask(response.data.next_task ? response.data.next_task : null);
+                setChecking(false);
             } catch (error) {
                 setError('Failed to submit task.');
+                setChecking(false);
             }
         }
     };
@@ -101,14 +103,22 @@ const LessonPage: React.FC = () => {
         router.push(`/user/${userId}`);
     };
 
+    const handleContinue = () => {
+        setScore(null);
+    };
+
     return (
         <main className="flex min-h-screen flex-col items-center justify-center p-24">
             <Header />
             {error && <p className="text-red-500">{error}</p>}
-            {currentTask ? (
-                <TaskCard task={currentTask.task} onSubmit={handleTaskSubmit} />
+            {loading ? (
+                <p>Loading lesson...</p>
+            ) : checking ? (
+                <p>Checking your answer...</p>
             ) : score ? (
-                <ScoreCard score={score} onContinue={() => setScore(null)} onFinishLesson={handleFinishLesson} />
+                <ScoreCard score={score} onContinue={handleContinue} onFinishLesson={handleFinishLesson} />
+            ) : currentTask ? (
+                <TaskCard task={currentTask.task} onSubmit={handleTaskSubmit} />
             ) : (
                 <div className="text-center">
                     <p>No more tasks available.</p>
@@ -125,3 +135,7 @@ const LessonPage: React.FC = () => {
 };
 
 export default LessonPage;
+
+
+// TODOs
+// # save generated tasks to a file for db prepopulation
