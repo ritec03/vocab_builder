@@ -461,6 +461,8 @@ class SpacedRepetitionLessonGenerator():
         high_scores_to_select, num_of_all_high_scores, _ = self.get_scores_for_lesson(timestamp_high_scores)
 
         num_new_words_to_learn = self.determine_num_of_new_words(leftover_count, num_of_all_high_scores)
+        logger.info(f"The number of new words is {num_new_words_to_learn}")
+
         scores_of_words_to_include_in_lesson = low_scored_to_review + high_scores_to_select[:(self.words_per_lesson - len(low_scored_to_review) - num_new_words_to_learn)]        
         
         words_for_review = set([self.db_manager.get_word_by_id(score.word_id) for score in scores_of_words_to_include_in_lesson])
@@ -479,6 +481,7 @@ class SpacedRepetitionLessonGenerator():
         return words_for_review
     
     def determine_num_of_new_words(self, leftover_count: int, high_scores_count: int) -> int:
+        # BUG bug when the number of learned words is 0 overall.
         """
         This function can be modified
         invariant: should return equal or less than leftover_count
@@ -486,6 +489,8 @@ class SpacedRepetitionLessonGenerator():
             leftover_count: num of words remaining to be picked
                 after all low score words were picked.
         """
+        logger.info(f"Leftover count is {leftover_count} ")
+        new_words_num = 0
         if leftover_count <= 1:
             new_words_num = 0
         
@@ -499,6 +504,7 @@ class SpacedRepetitionLessonGenerator():
         else:
             new_words_num = floor(leftover_count/4)
 
+        logger.info(f"The number of new words is {new_words_num}")
         return new_words_num if high_scores_count >= leftover_count - new_words_num else leftover_count - high_scores_count
             
     
@@ -508,6 +514,7 @@ class SpacedRepetitionLessonGenerator():
         Returns the lesson plan which is a list of tuples, where each tuple
         has the task and a list of correction tasks or strategies if tasks are not available.
         """
+        # TODO do not allow empty word sets as input
         # NOTE create a dummy plan by using one-word items only for now
         # NOTE for now create lesson task which partitions target words without overlaps, i.e.
         # a target word is targeted by one task only
@@ -532,7 +539,7 @@ class SpacedRepetitionLessonGenerator():
                 task_sequence.append(task_or_strategy)
 
             lesson_plan.append((task, task_sequence[1:]))
-        if not lesson_plan[0][0]:
+        if not lesson_plan[0][0]: # NOTE maybe emits error
             logger.warning("Lesson plan is empty.")
         return lesson_plan
 

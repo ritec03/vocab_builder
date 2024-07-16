@@ -69,6 +69,7 @@ class Task(ABC):
             }
             converted_resources.append(converted_res)
         return {
+            'task_string': self.produce_task(),
             'template': self.template.to_json(),  # Assuming template has to_json method
             'resources': converted_resources,
             'learning_items': [item.to_json() for item in self.learning_items],

@@ -28,6 +28,12 @@ def request_lesson(user_id: int):
 
         lesson_head = db_manager.retrieve_lesson(user_id)
         if lesson_head:
+            task = lesson_head["task"]["first_task"]
+            if not task:
+                    logger.warning("Task is empty.")
+            lesson_head["task"]["first_task"] = task.to_json()
+            if not lesson_head["task"]["first_task"]:
+                    logger.warning("Task is empty after converting to dict.")
             return jsonify(lesson_head), 201
         else:
             lesson_gen = SpacedRepetitionLessonGenerator(user_id, db_manager)

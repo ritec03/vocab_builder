@@ -43,5 +43,7 @@ def create_app(test_config=None):
     return app
 
 if __name__ == "__main__":
+    init_db = DatabaseManager(None)
     app = create_app()
-    app.run(port=8000, debug=True)
+    # disable reloader to avoid loading data to db twice on initializing.
+    app.run(port=8000, debug=True, use_reloader=False)

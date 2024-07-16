@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from data_structures import (
     MAX_USER_NAME_LENGTH,
     CorrectionStrategy,
+    Language,
     LexicalItem,
     Resource,
     Score,
@@ -70,6 +71,36 @@ class InvalidDelete(Exception):
 
     pass
 
+def read_templates_from_json(file_path: str) -> List[TaskTemplate]:
+    """
+    Reads a JSON file and converts it into a list of TaskTemplate objects.
+    
+    Args:
+        file_path (str): The path to the JSON file containing the templates.
+        
+    Returns:
+        List[TaskTemplate]: A list of TaskTemplate objects.
+    """
+    with open(file_path, 'r') as file:
+        data = json.load(file)
+    
+    templates = []
+    for item in data:
+        try:
+            template = TaskTemplate(
+                template_string=item["template_string"],
+                template_description=item["template_description"],
+                template_examples=item["template_examples"],
+                parameter_description=item["parameter_description"],
+                task_type=TaskType[item["task_type"]],
+                starting_language=Language[item["starting_language"]],
+                target_language=Language[item["target_language"]]
+            )
+            templates.append(template)
+        except ValueError as e:
+            logger.warning(f"Error processing item {item}: {e}")
+    
+    return templates
 
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
@@ -78,14 +109,35 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.close()
 
 class DatabaseManager:
-    def __init__(self, app: Flask):
+    def __init__(self, app: Optional[Flask]):
         self.Session = None
         if app: 
             self.init_app(app)
+        else:
+            engine = create_engine('sqlite:///database.db', echo=False)
+            Base.metadata.create_all(engine)
+            self.Session = scoped_session(sessionmaker(bind=engine))
+
+            templates = read_templates_from_json("templates.json")
+            for template in templates:
+                logger.info(f"Adding the following template now: {template.get_template_string()}")
+                self.add_template(template)
+
+            word_freq_output_file_path = "word_freq.txt"
+            word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
+            filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
+            list_of_tuples: List[Tuple[str, str, int]] = list(filtered_dataframe.to_records(index=False))
+            # convert numpy.int64 to Python integer
+            list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples][:100]
+            
+            indices = self.add_words_to_db(list_of_tuples)
+            logger.info(indices)
+            self.shutdown_session()
+
 
     def init_app(self, app: Flask):
         engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], echo=False)
-        Base.metadata.create_all(engine)
+        # Base.metadata.create_all(engine)
         self.Session = scoped_session(sessionmaker(bind=engine))
         app.teardown_appcontext(self.shutdown_session)
 
@@ -128,6 +180,7 @@ class DatabaseManager:
                             word.freq = freq
                             session.flush()
                             word_ids.append(word.id)
+            session.commit()
             return word_ids
         
         except Exception as e:
@@ -423,14 +476,17 @@ class DatabaseManager:
                 try:
                     session.flush()
                 except IntegrityError as e:
+                    logger.error(e)
                     session.rollback()
                     raise ValueError("the following error occured: ", e)
                 except Exception as e:  # TODO change error handling
+                    logger.error(e)
                     session.rollback()
                     raise ValueError("the following error occured: ", e)
+            session.commit()
             template_id = template_obj.id
             return template_id
-        except:
+        except Exception as e:
             session.rollback()
             logger.error(e)
             raise e
