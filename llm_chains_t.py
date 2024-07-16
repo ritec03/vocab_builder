@@ -1,9 +1,9 @@
 
 from typing import List, Tuple
-from data_structures import LexicalItem, TaskType
-from database import DATABASE_PATH, DB, DatabaseManager
+from data_structures import LexicalItem
 from exercise import LessonGenerator
 import pandas as pd
+from database_orm import DB, DatabaseManager
 
 # # create template
 # template_string = (
@@ -40,9 +40,6 @@ target_words = {LexicalItem(item="erzählen", pos="VERB", freq=100, id=1)}
 # task = TaskFactory().get_task_for_word(target_words)
 # print(task.produce_task())
 
-
-DB.create_db()
-
 word_freq_output_file_path = "word_freq.txt"
 word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
 filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
@@ -52,13 +49,12 @@ list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples
 DB.add_words_to_db(list_of_tuples)
 
 # create user 
-# user_id = DB.insert_user("test_user")
-# print(user_id)
+user_id = DB.insert_user("test_user")
+print(user_id)
 user_id = 1
 # generate lesson plan
 lesson_generator = LessonGenerator(user_id ,DB)
 lesson = lesson_generator.generate_lesson()
 # create a test for lesson iteration
 lesson.perform_lesson()
-DB.close()
 

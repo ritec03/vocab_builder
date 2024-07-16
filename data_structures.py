@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, unique
-from typing import Optional, Set, Tuple
+from typing import Optional, Set
 from math import floor
 
 MAX_USER_NAME_LENGTH = 20
@@ -26,6 +26,11 @@ class Language(Enum):
 class TaskType(Enum):
     ONE_WAY_TRANSLATION = 1
     FOUR_CHOICE = 2
+
+@dataclass(frozen=True)
+class User():
+    id: int
+    user_name: str
 
 # need frozen to be able to use with sets and to ensure that it does not change
 @dataclass(frozen=True)

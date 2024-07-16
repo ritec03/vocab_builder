@@ -1,12 +1,14 @@
 from abc import ABC, abstractmethod
 from typing import List, Set, Tuple
 from data_structures import NUM_NEW_WORDS_PER_LESSON, NUM_WORDS_PER_LESSON, LexicalItem, Score
-from database import DatabaseManager
+from database_orm import DB, DatabaseManager
 from evaluation import Evaluation
 from task import Task
 from task_generator import TaskFactory
-from database import DB
 from itertools import chain
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ErrorCorrectionStrategy(ABC):
     @abstractmethod
@@ -174,11 +176,13 @@ class Lesson:
         Assumes that a target word occurs only in one evaluation.
         """
         # get evaluation scores
-        final_eval_scores : Set[Score] = [eval.get_final_scores_highest() for eval in self.evaluation_list]
-        final_scores = [score for list_of_scores in final_eval_scores for score in list_of_scores]
-        # save scores to db
-        [DB.add_word_score(self.user_id, score) for score in final_scores]
-        print(final_scores)
+        # NOTE assuming that evaluations contain non-overlapping partition of target words
+        final_eval_scores : List[Set[Score]] = [eval.get_final_scores_highest() for eval in self.evaluation_list]
+        final_scores = set()
+        for s in final_eval_scores:
+            final_scores = final_scores.union(s)
+        DB.update_user_scores(self.user_id, final_scores)
+        logger.info(final_scores)
     
     def save_evaluations(self) -> None:
         """
@@ -207,25 +211,21 @@ class LessonGenerator():
     Based on this information a lesson plan is created with tasks,
     error correction strategies and target words.
     """
-    def __init__(self, user_id: int, db: DatabaseManager):
+    def __init__(self, user_id: int):
         self.user_id = user_id
-        self.db = db
 
     def generate_lesson(self) -> Lesson:
         # NOTE later also take into account user lesson history
         # retrieve user learning data
         # retrieve user lesson evaluation history
-        user_word_scores = self.retrieve_user_data()
+        user_word_scores = DB.retrieve_user_scores(self.user_id)
+        logger.info(user_word_scores)
         # choose target words
         target_words = self.choose_target_words(user_word_scores)
         # generate lesson plan
         lesson_plan = self.generate_lesson_plan(target_words)
         # return lesson
         return Lesson(self.user_id, target_words, lesson_plan)
-    
-    def retrieve_user_data(self) -> Set[Score]:
-        user_scores = self.db.retrieve_user_scores(self.user_id)
-        return user_scores
 
     def choose_target_words(self, user_scores: Set[Score]) -> Set[LexicalItem]:
         # TODO also take into account time last practiced later
@@ -240,7 +240,7 @@ class LessonGenerator():
 
         # Retrieve new words if needed
         if num_new_words_needed > 0:
-            new_words = self.db.retrieve_words_for_lesson(self.user_id, num_new_words_needed)
+            new_words = DB.retrieve_words_for_lesson(self.user_id, num_new_words_needed)
         else:
             new_words = set()
 

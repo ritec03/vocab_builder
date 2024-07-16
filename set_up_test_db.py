@@ -1,11 +1,19 @@
 import json
-from typing import List, Dict, Tuple
+from typing import List, Tuple
 
 import pandas as pd
 from data_structures import TaskType, Language
-from database import DB
 from exercise import LessonGenerator
 from task_template import TaskTemplate
+from database_orm import DB
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    filename='test_log.log', 
+    encoding='utf-8', 
+    level=logging.DEBUG
+)
 
 # Assume TaskTemplate class is defined as provided earlier
 
@@ -36,7 +44,7 @@ def read_templates_from_json(file_path: str) -> List[TaskTemplate]:
             )
             templates.append(template)
         except ValueError as e:
-            print(f"Error processing item {item}: {e}")
+            logger.warning(f"Error processing item {item}: {e}")
     
     return templates
 
@@ -65,8 +73,6 @@ def write_template_json(template: TaskTemplate, file_path: str):
 # Example usage
 if __name__ == "__main__":
     templates = read_templates_from_json("templates.json")
-    
-    DB.create_db()
     word_freq_output_file_path = "word_freq.txt"
     word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
     filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
@@ -80,13 +86,12 @@ if __name__ == "__main__":
     
     # create user 
     user_id = DB.insert_user("test_user")
-    print(user_id)
+    logger.info("The user id is %s", user_id)
     user_id = 1
 
-    lesson_generator = LessonGenerator(user_id ,DB)
+    lesson_generator = LessonGenerator(user_id)
     lesson = lesson_generator.generate_lesson()
     # create a test for lesson iteration
     lesson.perform_lesson()
-    DB.close()
 
 

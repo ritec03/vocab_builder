@@ -1,10 +1,9 @@
-from data_structures import TaskType, Language
-from database import DB
+from data_structures import TaskType
 from task_template import TaskTemplate
 import random  # Import for random selection
+from database_orm import DB
 
 class TemplateRetriever():
-
     def get_random_template_for_task_type(self, task_type: TaskType) -> TaskTemplate:
         """
         Provide a random template that adheres to the specified task type.

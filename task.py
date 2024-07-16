@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Type
 import copy
-from data_structures import EXERCISE_THRESHOLD, FourChoiceAnswer, LexicalItem, Score
+from data_structures import EXERCISE_THRESHOLD, FourChoiceAnswer, LexicalItem, Score, TaskType
 from evaluation_method import AIEvaluation, EvaluationMethod
 from task_template import Resource, TaskTemplate
+import logging
 
-# TODO write code for resource saving into database
-# TODO create example templates manually
+logger = logging.getLogger(__name__)
 
 class Task(ABC):
     def __init__(
@@ -99,8 +99,8 @@ class FourChoiceTask(Task):
             task_id: int
         ):
         # validate that answer is one of four options a, b, c or d.
-        print(resources)
-        print("The answer is ", answer)
+        logger.info(resources)
+        logger.info("The answer is %s", answer)
         if answer not in [a.name for a in list(FourChoiceAnswer)]:
             raise ValueError("Answer is not one of the FourChoiceAnswer options.")
 
@@ -124,3 +124,11 @@ class FourChoiceTask(Task):
         if user_input not in [a.name for a in list(FourChoiceAnswer)]:
             raise ValueError("User input is not one of four options.")
         return super().evaluate_user_input(user_input)
+    
+def get_task_type_class(task_type: TaskType) -> Type[Task]:
+    if task_type == TaskType.FOUR_CHOICE:
+        return FourChoiceTask
+    elif task_type == TaskType.ONE_WAY_TRANSLATION:
+        return OneWayTranslaitonTask
+    else:
+        raise ValueError("Unknown task type ", task_type)

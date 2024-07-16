@@ -2,16 +2,17 @@ from abc import ABC, abstractmethod
 import random
 from typing import Dict, List, Set, Tuple
 from data_structures import LexicalItem, TaskType
-from database import DB
+from database_orm import DB
 from llm_chains import invoke_task_generation_chain
 from task import Task
 from task_template import Resource, TaskTemplate
 from template_retriever import TemplateRetriever
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TaskFactory:
     """Either retrieves or generates a task"""
-    def __init__(self):
-        pass
 
     def get_task_for_word(self, target_words: Set[LexicalItem], template: TaskTemplate=None, criteria: List=[]) -> Task:
         """
@@ -137,7 +138,7 @@ class AITaskGenerator(TaskGenerator):
         Pass target words, template and parameter description to AI.
         """
         output_dict = invoke_task_generation_chain(target_words, template)
-        print(output_dict)
+        logger.info(output_dict)
         # Check that output contains all keys of template.parameter_description. Raise exception otherwise
         if not set(template.parameter_description.keys()).issubset(output_dict.keys()):
             raise ValueError("Output does not contain all keys of template.parameter_description")
