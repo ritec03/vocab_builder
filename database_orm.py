@@ -137,7 +137,7 @@ class DatabaseManager:
 
     def init_app(self, app: Flask):
         engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], echo=False)
-        # Base.metadata.create_all(engine)
+        Base.metadata.create_all(engine)
         self.Session = scoped_session(sessionmaker(bind=engine))
         app.teardown_appcontext(self.shutdown_session)
 
@@ -170,16 +170,16 @@ class DatabaseManager:
                     session.flush()
                     word_ids.append(word_object.id)
                 except IntegrityError:
-                    with self.Session.begin() as session:
-                        word = self.get_word_pos(word_object.word, word_object.pos)
-                        session.add(word)
-                        if not word:
-                            raise
-                        else:
-                            # UPDATE word freq
-                            word.freq = freq
-                            session.flush()
-                            word_ids.append(word.id)
+                    session.rollback()
+                    retrieved_word_obj = self.get_word_pos(word_object.word, word_object.pos)
+                    session.add(retrieved_word_obj)
+                    if not retrieved_word_obj:
+                        raise
+                    else:
+                        # UPDATE word freq
+                        retrieved_word_obj.freq = freq
+                        session.flush()
+                    word_ids.append(retrieved_word_obj.id)
             session.commit()
             return word_ids
         
@@ -329,7 +329,8 @@ class DatabaseManager:
             score (int): Score to add (MIN_SCORE and MAX_SCORE).
             lesson_id (int): The lesson id the added score is associated with.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             if not MIN_SCORE <= score.score <= MAX_SCORE:
                 raise ValueError(
                     f"Score should be between {MIN_SCORE} and {MAX_SCORE}."
@@ -340,20 +341,31 @@ class DatabaseManager:
                 )
                 session.add(new_entry)
                 session.flush()
+                session.commit()
             except IntegrityError as e:
-                print(e)
+                session.rollback()
+                logger.error(e)
                 raise ValueDoesNotExistInDB("User or word or lesson id invalid.")
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def get_score(self, user_id: int, word_id: int, lesson_id: int):
-        with self.Session.begin() as session:
-            entry = session.execute(
-                select(LearningDataDBObj).where(
-                    LearningDataDBObj.user_id == user_id,
-                    LearningDataDBObj.word_id == word_id,
-                    LearningDataDBObj.lesson_id == lesson_id,
-                )
-            ).scalar()
-            return entry.score if entry else None
+            session = self.Session()
+            try:
+                entry = session.execute(
+                    select(LearningDataDBObj).where(
+                        LearningDataDBObj.user_id == user_id,
+                        LearningDataDBObj.word_id == word_id,
+                        LearningDataDBObj.lesson_id == lesson_id,
+                    )
+                ).scalar()
+                return entry.score if entry else None
+            except Exception as e:
+                session.rollback()
+                logger.error(e)
+                raise e
 
     def update_user_scores(self, user_id: int, lesson_scores: Set[Score], lesson_id: int) -> None:
         """
@@ -363,7 +375,8 @@ class DatabaseManager:
         If non existent user - raise ValueDoesNotExistInDB
         If ther eis a word or words that are not in db - raise ValueDoesNotExistInDB
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             # Verify user exists
             user = session.get(UserDBObj, user_id)
             if not user:
@@ -372,6 +385,10 @@ class DatabaseManager:
             # Process each score
             for score in lesson_scores:
                 self.add_word_score(user_id, score, lesson_id)
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def get_latest_word_score_for_user(self, user_id: int) -> Dict[int, Dict]:
         """
@@ -508,7 +525,8 @@ class DatabaseManager:
         Returns:
             Optional[TaskTemplate]: The retrieved template, or None if not found.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             stmt = select(TemplateDBObj).where(TemplateDBObj.id == template_id)
             rows = session.scalars(stmt).all()
             if len(rows) == 0:
@@ -519,6 +537,10 @@ class DatabaseManager:
                 return template
             else:
                 raise KeyError(f"User id {template_id} is not unique.")
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def get_template_parameters(self, template_id: int) -> Optional[Dict[str, str]]:
         """
@@ -531,7 +553,8 @@ class DatabaseManager:
             dict: A dictionary mapping parameter names to descriptions.
             None if no parameters found
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             stmt = select(TemplateParameterDBObj).where(
                 TemplateParameterDBObj.template_id == template_id
             )
@@ -542,6 +565,10 @@ class DatabaseManager:
             for row in rows:
                 parameters[row.name] = row.description
             return parameters
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def get_templates_by_task_type(self, task_type: TaskType) -> List[TaskTemplate]:
         """
@@ -598,6 +625,7 @@ class DatabaseManager:
                 resource_obj.words.append(resource_word)
             session.add(resource_obj)
             session.flush()
+            session.commit()
 
             # create resource object
             resource = Resource(
@@ -621,7 +649,8 @@ class DatabaseManager:
         Removes resource if there are no associated tasks with it.
         Raise InvalidDelete if there are associated tasks.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             # Retrieve the resource to be deleted
             resource_to_remove = session.get(ResourceDBObj, resource_id)
             if not resource_to_remove:
@@ -640,9 +669,16 @@ class DatabaseManager:
 
             # Delete the resource itself
             session.delete(resource_to_remove)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
+
 
     def get_resource_by_id(self, resource_id: int) -> Resource:
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             stmt = select(ResourceDBObj).where(ResourceDBObj.id == resource_id)
             rows = session.scalars(stmt).all()
             if len(rows) == 0:
@@ -657,6 +693,10 @@ class DatabaseManager:
                     )
                 resource = Resource(row.id, row.resource_text, lexical_items)
             return resource
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def get_resources_by_target_word(self, target_word: LexicalItem) -> List[Resource]:
         """
@@ -664,7 +704,8 @@ class DatabaseManager:
         Raises:
             ValueDoesNotExistInDB error if target word is not in DB.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             stmt = select(ResourceDBObj).where(
                 ResourceDBObj.words.any(ResourceWordDBObj.word_id == target_word.id)
             )
@@ -679,6 +720,10 @@ class DatabaseManager:
                     )
                 resources.append(Resource(row.id, row.resource_text, lexical_items))
             return resources
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     """
     METHODS FOR WORKING WITH TASKS
@@ -726,6 +771,7 @@ class DatabaseManager:
                 task_resource_obj.parameter = parameter
                 task_obj.resources.append(task_resource_obj)
             session.flush()
+            session.commit()
  
             template = self.convert_template_obj(task_obj.template)
             # create task object
@@ -803,7 +849,8 @@ class DatabaseManager:
         Return task of the task_type. Returns at most 100 tasks unless otherwise specified.
         Raise ValueError if invalid task type.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             if not isinstance(task_type, TaskType):
                 raise ValueError(f"Invalid task type provided: {task_type}")
 
@@ -854,13 +901,18 @@ class DatabaseManager:
                 result_tasks.append(task)
 
             return result_tasks
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def get_tasks_by_template(self, template_id: int, number: int = 100) -> List[Task]:
         """
         Return tasks that are based on the specified template ID.
         Returns at most 'number' tasks unless otherwise specified.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             # Query for tasks associated with the specified template ID
             tasks_query = (
                 select(TaskDBObj)
@@ -907,6 +959,10 @@ class DatabaseManager:
                 result_tasks.append(task)
 
             return result_tasks
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def get_tasks_for_words(
         self, target_words: Set[LexicalItem], number: int = 100
@@ -915,7 +971,8 @@ class DatabaseManager:
         Return tasks whose task.target_words is a superset of the target_words.
         Returns at most 100 tasks unless otherwise specified.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             # Extract IDs from LexicalItem set for comparison
             target_word_ids = {word.id for word in target_words}
 
@@ -977,13 +1034,18 @@ class DatabaseManager:
                 result_tasks.append(task)
 
             return result_tasks
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def remove_task(self, task_id: int) -> None:
         """
         Removes task from tasks and task_resources tables.
         Raises error if there are any lessons associated with that task.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             # Retrieve the task to be deleted
             task_to_remove = session.get(TaskDBObj, task_id)
             if not task_to_remove:
@@ -1000,6 +1062,12 @@ class DatabaseManager:
 
             # Delete the task itself
             session.delete(task_to_remove)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
+
 
     """
     METHODS FOR WORKING WITH LESSONS
@@ -1424,7 +1492,8 @@ class DatabaseManager:
         Raises ValueDoesNotExistInDB if user does not exist.
         TODO Returns lesson id.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             if not session.get(UserDBObj, user_id):
                 raise ValueDoesNotExistInDB("User does not exist.")
 
@@ -1452,8 +1521,13 @@ class DatabaseManager:
                 new_lesson.evaluations.append(new_evaluation)
             session.add(new_lesson)
             session.flush()
+            session.commit()
             lesson_id = new_lesson.id
             return lesson_id
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def get_most_recent_lesson_data(self, user_id: int) -> Optional[List[Evaluation]]:
         """
@@ -1461,7 +1535,8 @@ class DatabaseManager:
         Returns None if the user has not completed any lessons.
         Raises ValueDoesNotExistInDB if user does not exist.
         """
-        with self.Session.begin() as session:
+        session = self.Session()
+        try:
             # TODO what about correction field?
             if not session.get(UserDBObj, user_id):
                 raise ValueDoesNotExistInDB("User does not exist.")
@@ -1503,6 +1578,10 @@ class DatabaseManager:
                 evaluations.append(evaluation)
 
             return evaluations
+        except Exception as e:
+            session.rollback()
+            logger.error(e)
+            raise e
 
     def retrieve_words_for_lesson(
         self, user_id: int, word_num: int
@@ -1541,4 +1620,4 @@ class DatabaseManager:
         except Exception as e:
             session.rollback()
             logger.error(f"Failed to retrieve words for lesson: {str(e)}")
-            raise Exception(f"Failed to retrieve words for lesson: {str(e)}")
+            raise e
