@@ -88,14 +88,14 @@ class TemplateDBObj(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # NOTE sqlalchemy enums use enam names not values
-    task_type: Mapped[str] = mapped_column(Enum(TaskType, validate_strings=True))
+    task_type: Mapped[TaskType] = mapped_column(Enum(TaskType, validate_strings=True))
     template: Mapped[str] = mapped_column(unique=True)
     description: Mapped[str]
     examples: Mapped[str] = mapped_column(JSON)
-    starting_language: Mapped[str] = mapped_column(
+    starting_language: Mapped[Language] = mapped_column(
         Enum(Language, validate_strings=True)
     )
-    target_language: Mapped[str] = mapped_column(Enum(Language, validate_strings=True))
+    target_language: Mapped[Language] = mapped_column(Enum(Language, validate_strings=True))
     parameters = relationship("TemplateParameterDBObj", back_populates="template")
 
 
@@ -245,7 +245,7 @@ class LessonPlanTaskDBObj(Base):
     sequence_num: Mapped[int]
     attempt_num: Mapped[int]
     task_id = mapped_column(Integer, ForeignKey("tasks.id"), nullable=True)
-    error_correction = mapped_column(Enum(CorrectionStrategy, validate_strings=True, nullable=True))
+    error_correction: Mapped[CorrectionStrategy] = mapped_column(Enum(CorrectionStrategy, validate_strings=True, nullable=True))
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     task: Mapped["TaskDBObj"] = relationship("TaskDBObj")
 

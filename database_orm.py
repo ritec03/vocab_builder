@@ -136,12 +136,12 @@ def read_tasks_from_json(file_path: str) -> List[Task]:
             resources = dict()
             for key in serialized_resources.keys():
                 target_words = [LexicalItem(s_word["item"], s_word["pos"], s_word["freq"], s_word["id"]) for s_word in serialized_resources[key]["target_words"]]
-                resource = Resource(serialized_resources[key]["id"], serialized_resources[key]["resource"], target_words)
+                resource = Resource(serialized_resources[key]["id"], serialized_resources[key]["resource"], set(target_words))
                 resources[key] = resource
 
             target_words = [LexicalItem(s_word["item"], s_word["pos"], s_word["freq"], s_word["id"]) for s_word in item["learning_items"]]
             TaskClass = get_task_type_class(template.task_type)
-            task = TaskClass(task_id=item["id"], template=template, resources=resources, learning_items=target_words, answer=item["correctAnswer"])
+            task = TaskClass(task_id=item["id"], template=template, resources=resources, learning_items=set(target_words), answer=item["correctAnswer"])
             tasks.append(task)
         except ValueError as e:
             logger.warning(f"Error processing item {item}: {e}")
@@ -216,7 +216,7 @@ class DatabaseManager:
                     word_ids.append(word_object.id)
                 except IntegrityError:
                     session.rollback()
-                    retrieved_word_obj = self.get_word_pos(word_object.word, word_object.pos)
+                    retrieved_word_obj = self.get_word_obj_by_word_and_pos(word_object.word, word_object.pos)
                     session.add(retrieved_word_obj)
                     if not retrieved_word_obj:
                         raise
@@ -233,7 +233,7 @@ class DatabaseManager:
             logger.error(e)
             raise Exception(f"Failed to insert words to db: {str(e)}")
 
-    def get_word_pos(self, word: str, pos: str) -> Optional[WordDBObj]:
+    def get_word_obj_by_word_and_pos(self, word: str, pos: str) -> Optional[WordDBObj]:
         """
         WordDBObj with word and pos that is in DB or None.
         Raise:
@@ -244,14 +244,11 @@ class DatabaseManager:
             stmt = select(WordDBObj).where(
                 and_(WordDBObj.word == word, WordDBObj.pos == pos)
             )
-            rows = session.scalars(stmt).all()
-            if len(rows) == 0:
-                return None
-            elif len(rows) == 1:
-                word = rows[0]
-                return word
+            word_obj = session.execute(stmt).scalar_one_or_none()
+            if word_obj:
+                return word_obj
             else:
-                raise ValueError(f"More than one word-pos {word}-{pos} entry found.")
+                raise ValueError(f"None or more than one word-pos {word}-{pos} entry found.")
         except Exception as e:
             session.rollback()
             logger.error(e)
@@ -553,7 +550,7 @@ class DatabaseManager:
             logger.error(e)
             raise e
 
-    def remove_template(template_name: str) -> None:
+    def remove_template(self, template_name: str) -> None:
         """
         Removes template with template_string from the database and ALL
         associated tasks that use this template.
@@ -674,7 +671,7 @@ class DatabaseManager:
 
             # create resource object
             resource = Resource(
-                resource_obj.id, resource_obj.resource_text, list(target_words)
+                resource_obj.id, resource_obj.resource_text, target_words
             )
             return resource
         except Exception as e:
@@ -682,7 +679,7 @@ class DatabaseManager:
             logger.error(e)
             raise e
 
-    def add_resource_auto(resource_str: str) -> Resource:
+    def add_resource_auto(self, resource_str: str) -> Resource:
         """
         Add resource string as a task and try to match it to
         lemmatized words
@@ -721,7 +718,7 @@ class DatabaseManager:
             raise e
 
 
-    def get_resource_by_id(self, resource_id: int) -> Resource:
+    def get_resource_by_id(self, resource_id: int) -> Optional[Resource]:
         session = self.Session()
         try:
             stmt = select(ResourceDBObj).where(ResourceDBObj.id == resource_id)
@@ -730,10 +727,10 @@ class DatabaseManager:
                 return None
             resources = []
             for row in rows:
-                lexical_items = []
+                lexical_items = set()
                 for resource_word in row.words:
                     word = resource_word.word
-                    lexical_items.append(
+                    lexical_items.add(
                         LexicalItem(word.word, word.pos, word.freq, word.id)
                     )
                 resource = Resource(row.id, row.resource_text, lexical_items)
@@ -757,10 +754,10 @@ class DatabaseManager:
             rows = session.scalars(stmt).all()
             resources = []
             for row in rows:
-                lexical_items = []
+                lexical_items = set()
                 for resource_word in row.words:
                     word = resource_word.word
-                    lexical_items.append(
+                    lexical_items.add(
                         LexicalItem(word.word, word.pos, word.freq, word.id)
                     )
                 resources.append(Resource(row.id, row.resource_text, lexical_items))
@@ -847,7 +844,7 @@ class DatabaseManager:
                     TemplateParameterDBObj.template_id == template_id,
                     TemplateParameterDBObj.name == param_name,
                 )
-                parameter = session.scalars(stmt).first()
+                parameter = session.execute(stmt).scalar_one()
                 task_resource_obj.parameter = parameter
                 task_obj.resources.append(task_resource_obj)
             session.flush()
@@ -1036,7 +1033,7 @@ class DatabaseManager:
     METHODS FOR WORKING WITH LESSONS
     """
 
-    def retrieve_lesson(self, user_id: int) -> Optional[Dict[str, Union[int, Task]]]:
+    def retrieve_lesson(self, user_id: int) -> Optional[Dict[str, Union[int, Dict[str, Union[Tuple[int, int], Task]]]]]:
         """
         Retrieves lesson_id and first task for a lesson if there is
         a new uncompleted lesson for the user. Otherwise, returns None.
@@ -1108,7 +1105,7 @@ class DatabaseManager:
             self,
             user_id: int, 
             lesson_plan: List[Tuple[Task, List[Union[CorrectionStrategy, Task]]]]
-        ) -> int:
+        ) -> Dict[str, Union[int, Dict[str, Union[Tuple[int,int], Task]]]]:
         """
         Initializes a lesson and saves lesson plan for the lesson.
         Checks if a new lesson already exists for the user.
@@ -1331,7 +1328,7 @@ class DatabaseManager:
             self,
             user_id: int, 
             lesson_id: int
-        ) -> Optional[Dict[str, Union[Task, Evaluation, Tuple[int,int]]]]:
+        ) -> Optional[Dict[str, Union[None, CorrectionStrategy, Task, Evaluation, Tuple[int,int]]]]:
         """
         Get the next task in the lesson for the user, if the task is defined. If
         the next task is not defined in the the lesson plan (the case for a retry according
@@ -1444,7 +1441,7 @@ class DatabaseManager:
                 raise Exception("The task slot is not eligible for updating.")
 
             # Update the task in the lesson plan
-            task_obj.task_id = task.task_id
+            task_obj.task_id = task.id
             task_obj.completed = False
             session.commit()
 
