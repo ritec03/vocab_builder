@@ -116,6 +116,7 @@ class LessonBlueprintTestCase(unittest.TestCase):
         self.assertIn('order', res.get_json()["task"])
         self.assertIn('first_task', res.get_json()["task"])
 
+    # TODO think about the random nature of the tests here.
     def test_submit_answer(self):
         res = self.client.post(f'/users/{self.user_id}/lessons')
         data = res.get_json()

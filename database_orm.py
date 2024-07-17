@@ -156,7 +156,6 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 
 class DatabaseManager:
     def __init__(self, app: Optional[Flask]):
-        self.Session = None
         if app: 
             self.init_app(app)
         else:
@@ -1298,18 +1297,26 @@ class DatabaseManager:
             lesson = session.execute(stmt).scalar_one_or_none()
 
             if not lesson:
-                raise ValueError("Lesson or User does not exist.")
+                raise ValueDoesNotExistInDB("Lesson or User does not exist.")
 
             # Retrieve the specific task from the lesson plan
-            task_stmt = select(LessonPlanTaskDBObj).where(
-                LessonPlanTaskDBObj.lesson_plan_id == lesson.lesson_plan.id,
-                LessonPlanTaskDBObj.sequence_num == order[0],
-                LessonPlanTaskDBObj.attempt_num == order[1]
+            lesson_task_stmt = (
+                select(LessonPlanTaskDBObj)
+                .options(joinedload(LessonPlanTaskDBObj.task))
+                .where(
+                    LessonPlanTaskDBObj.lesson_plan_id == lesson.lesson_plan.id,
+                    LessonPlanTaskDBObj.sequence_num == order[0],
+                    LessonPlanTaskDBObj.attempt_num == order[1],
+                    LessonPlanTaskDBObj.task_id == TaskDBObj.id
+                )
             )
-            task_obj = session.execute(task_stmt).scalar_one_or_none()
-
+            lesson_task_obj = session.execute(lesson_task_stmt).scalar_one_or_none()
+            if not lesson_task_obj:
+                raise ValueDoesNotExistInDB("Lesson Task does not exist in the lesson plan.")
+            
+            task_obj = lesson_task_obj.task
             if not task_obj:
-                raise ValueError("Task does not exist in the lesson plan.")
+                raise ValueDoesNotExistInDB("Task of Lesson Task does not exist.")
 
             if history_entry.task.id != task_obj.id:
                 raise Exception("Retrieved task and submitted task have different ids. Maybe wrong order tuple.")
@@ -1317,22 +1324,22 @@ class DatabaseManager:
             # Retrieve or create the evaluation
             eval_stmt = select(EvaluationDBObj).where(
                 EvaluationDBObj.lesson_id == lesson_id,
-                EvaluationDBObj.sequence_number == task_obj.sequence_num
+                EvaluationDBObj.sequence_number == lesson_task_obj.sequence_num
             )
             evaluation = session.execute(eval_stmt).scalar_one_or_none()
 
             if not evaluation:
                 evaluation = EvaluationDBObj(
                     lesson_id=lesson_id,
-                    sequence_number=task_obj.sequence_num
+                    sequence_number=lesson_task_obj.sequence_num
                 )
                 session.add(evaluation)
 
             # Create and add the new history entry
             new_history_entry = HistoryEntrieDBObj(
                 evaluation_id=evaluation.id,
-                sequence_number=order[1],
-                task_id=task_obj.task_id,
+                sequence_number=lesson_task_obj.attempt_num,
+                task_id=task_obj.id,
                 response=history_entry.response
             )
 
@@ -1348,7 +1355,7 @@ class DatabaseManager:
             session.add(new_history_entry)
 
             # Mark the task as completed
-            task_obj.completed = True
+            lesson_task_obj.completed = True
             session.commit()
 
         except Exception as e:

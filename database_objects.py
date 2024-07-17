@@ -247,6 +247,7 @@ class LessonPlanTaskDBObj(Base):
     task_id = mapped_column(Integer, ForeignKey("tasks.id"), nullable=True)
     error_correction = mapped_column(Enum(CorrectionStrategy, validate_strings=True, nullable=True))
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    task: Mapped["TaskDBObj"] = relationship("TaskDBObj")
 
     __table_args__ = (UniqueConstraint("lesson_plan_id", "sequence_num", "attempt_num"),)
 
