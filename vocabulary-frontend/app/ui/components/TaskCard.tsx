@@ -1,36 +1,8 @@
 // app/ui/components/TaskCard.tsx
 'use client';
 
+import { Task } from '@/app/lib/definitions';
 import { useState } from 'react';
-
-interface Task {
-    id: number;
-    task_string: string;
-    template: {
-        id: number;
-        template: string;
-        task_type: string;
-        starting_language: string;
-        target_language: string;
-    };
-    correctAnswer: string;
-    resources: {
-        id: number;
-        resource: string;
-        target_words: {
-            id: number;
-            item: string;
-            pos: string;
-            freq: number;
-        }[];
-    }[];
-    learning_items: {
-        id: number;
-        item: string;
-        pos: string;
-        freq: number;
-    }[];
-}
 
 interface TaskCardProps {
     task: Task;

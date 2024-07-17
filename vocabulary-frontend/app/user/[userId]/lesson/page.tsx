@@ -7,35 +7,7 @@ import axios from 'axios';
 import TaskCard from '../../../ui/components/TaskCard';
 import ScoreCard from '../../../ui/components/ScoreCard';
 import Header from '../../../ui/components/Header';
-
-interface Task {
-    id: number;
-    task_string: string;
-    template: {
-        id: number;
-        template: string;
-        task_type: string;
-        starting_language: string;
-        target_language: string;
-    };
-    correctAnswer: string;
-    resources: {
-        id: number;
-        resource: string;
-        target_words: {
-            id: number;
-            item: string;
-            pos: string;
-            freq: number;
-        }[];
-    }[];
-    learning_items: {
-        id: number;
-        item: string;
-        pos: string;
-        freq: number;
-    }[];
-}
+import { Task } from '@/app/lib/definitions';
 
 interface LessonHead {
     lesson_id: number;
