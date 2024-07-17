@@ -134,7 +134,7 @@ class FourChoiceTask(Task):
             if not isinstance(resources.get(key), Resource):
                 raise ValueError(f"Resource for option {key} is not a valid Resource instance.")
 
-        super().__init__(template, resources, learning_items, getattr(FourChoiceAnswer, answer), task_id)
+        super().__init__(template, resources, learning_items, answer, task_id)
 
     def initialize_evaluation_method(self) -> EvaluationMethod:
         return AIEvaluation({"task": self.produce_task()})
@@ -147,7 +147,7 @@ class FourChoiceTask(Task):
     # TODO change to json methods to be more consistent
     def to_json(self):
         repr = super().to_json()
-        repr["correctAnswer"] = self.correctAnswer.name
+        repr["correctAnswer"] = self.correctAnswer
         return repr
     
 def get_task_type_class(task_type: TaskType) -> Type[Task]:
