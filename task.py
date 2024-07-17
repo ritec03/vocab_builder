@@ -60,14 +60,14 @@ class Task(ABC):
     
     # TODO change to json methods to be more consistent
     def to_json(self):
-        converted_resources = []
+        converted_resources = dict()
         for key in self.resources:
             converted_res = {
                 "id": self.resources[key].resource_id,
                 "resource": self.resources[key].resource,
                 "target_words": [word.to_json() for word in self.resources[key].target_words]
             }
-            converted_resources.append(converted_res)
+            converted_resources[key] = converted_res
         return {
             'task_string': self.produce_task(),
             'template': self.template.to_json(),  # Assuming template has to_json method

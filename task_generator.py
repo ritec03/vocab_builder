@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import json
 import random
 from typing import Dict, List, Set, Tuple
 from data_structures import LexicalItem, TaskType
@@ -24,12 +25,10 @@ class TaskFactory:
         :param criteria: A list of criteria objects to apply in task selection.
         :return: A list of Task objects.
         """
-        # TODO implement criteria
         # TODO implement retrieval of tasks based on criteria.
-        # tasks = db.fetch_tasks(criteria)
-        tasks = [] # NOTE task fetching from db is not implemented yet
+        tasks = self.db_manager.get_tasks_for_words(target_words, 10)
         if tasks:
-            return tasks[0] # NOTE for now just return the first task
+            return random.choice(tasks) # NOTE for now just return a random task
         else:
             return self.generate_task(target_words, template, criteria)
 
@@ -132,6 +131,28 @@ class ManualTaskGenerator(TaskGenerator):
     pass
 
 class AITaskGenerator(TaskGenerator):
+    def create_task(self, target_words: Set[LexicalItem], task_type: TaskType, template: TaskTemplate = None, answer: str = None, resources: Dict[str, Resource] = None) -> Task:
+        """
+        Additionally to creating a task, saves a serialized version
+        of the task to file called tasks.json.
+        """
+        task = super().create_task(target_words, task_type, template, answer, resources)
+        # TODO ignore IDs
+        try:
+            try:
+                with open('tasks.json', 'r') as f:
+                    existing_tasks = json.load(f)
+            except:
+                existing_tasks = []
+
+            existing_tasks.append(task.to_json())
+            with open('tasks.json', 'w') as f:
+                json.dump(existing_tasks, f, indent=4)
+        except Exception as e:
+            logger.warning("Failed to save generated tasks due to this error", e)
+
+        return task
+
     def fetch_or_generate_resources(
         self, 
         template: TaskTemplate, 

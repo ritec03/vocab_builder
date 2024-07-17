@@ -102,6 +102,52 @@ def read_templates_from_json(file_path: str) -> List[TaskTemplate]:
     
     return templates
 
+def read_tasks_from_json(file_path: str) -> List[Task]:
+    """
+    Reads a JSON file and converts it into a list of Task objects.
+    
+    Args:
+        file_path (str): The path to the JSON file containing the tasks.
+        
+    Returns:
+        List[Task]: A list of Task objects.
+    """
+    try:
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+    except:
+        logger.warning("Could not load tasks.json file.")
+        return []
+    
+    tasks: List[Task] = []
+    for item in data:
+        try:
+            serizlied_template = item["template"]
+            template = TaskTemplate(
+                template_string=serizlied_template["template"],
+                template_description=serizlied_template["description"],
+                template_examples=serizlied_template["examples"],
+                parameter_description=serizlied_template["parameter_description"],
+                task_type=TaskType[serizlied_template["task_type"]],
+                starting_language=Language[serizlied_template["starting_language"]],
+                target_language=Language[serizlied_template["target_language"]]
+            )
+            serialized_resources: Dict[str, Dict] = item["resources"]
+            resources = dict()
+            for key in serialized_resources.keys():
+                target_words = [LexicalItem(s_word["item"], s_word["pos"], s_word["freq"], s_word["id"]) for s_word in serialized_resources[key]["target_words"]]
+                resource = Resource(serialized_resources[key]["id"], serialized_resources[key]["resource"], target_words)
+                resources[key] = resource
+
+            target_words = [LexicalItem(s_word["item"], s_word["pos"], s_word["freq"], s_word["id"]) for s_word in item["learning_items"]]
+            TaskClass = get_task_type_class(template.task_type)
+            task = TaskClass(task_id=item["id"], template=template, resources=resources, learning_items=target_words, answer=item["correctAnswer"])
+            tasks.append(task)
+        except ValueError as e:
+            logger.warning(f"Error processing item {item}: {e}")
+
+    return tasks
+
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
@@ -791,6 +837,8 @@ class DatabaseManager:
             logger.error(e)
             raise
 
+    # TODO encapsulate task formation
+
     def get_task_by_id(self, task_id: int) -> Task:
         """
         Retrieves a task by id along with its associated template, resources,
@@ -873,7 +921,7 @@ class DatabaseManager:
                     res.parameter.name: Resource(
                         resource_id=res.resource.id,
                         resource=res.resource.resource_text,
-                        target_words=set(res.resource.words),
+                        target_words=set(LexicalItem(word.word.word, word.word.pos, word.word.freq, word.word.id) for word in res.resource.words),
                     )
                     for res in task_obj.resources
                 }
@@ -931,7 +979,7 @@ class DatabaseManager:
                     res.parameter.name: Resource(
                         resource_id=res.resource.id,
                         resource=res.resource.resource_text,
-                        target_words=set(res.resource.words),
+                        target_words=set(LexicalItem(word.word.word, word.word.pos, word.word.freq, word.word.id) for word in res.resource.words),
                     )
                     for res in task_obj.resources
                 }
@@ -1006,7 +1054,7 @@ class DatabaseManager:
                     res.parameter.name: Resource(
                         resource_id=res.resource.id,
                         resource=res.resource.resource_text,
-                        target_words=set(res.resource.words),
+                        target_words=set(LexicalItem(word.word.word, word.word.pos, word.word.freq, word.word.id) for word in res.resource.words),
                     )
                     for res in task_obj.resources
                 }

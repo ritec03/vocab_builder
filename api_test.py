@@ -5,8 +5,7 @@ from flask import Flask
 import pandas as pd
 from sqlalchemy import Tuple
 from app_factory import create_app
-from database_orm import DatabaseManager
-from set_up_test_db import read_templates_from_json
+from database_orm import DatabaseManager, read_tasks_from_json, read_templates_from_json
 
 class UserBlueprintTestCase(unittest.TestCase):
     @classmethod
@@ -85,15 +84,27 @@ class LessonBlueprintTestCase(unittest.TestCase):
         # convert numpy.int64 to Python integer
         cls.list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples][:100]
 
+    def prepopulate_db(self, db_manager: DatabaseManager):
+        # add template and create template dict
+        templates = read_templates_from_json("templates.json")
+        template_dict = dict()
+        for template in templates:
+            added_template_id = db_manager.add_template(template)
+            template_dict[template.get_template_string()] = added_template_id
+        db_manager.add_words_to_db(self.list_of_tuples)
+        tasks = read_tasks_from_json("tasks.json")
+        for task in tasks:
+            task.template.id = template_dict[task.template.get_template_string()]
+            for key in task.resources.keys():
+                db_manager.add_resource_manual(task.resources[key].resource, task.resources[key].target_words)
+            db_manager.add_task(task.template.id, task.resources, task.learning_items, task.correctAnswer)
+
     def setUp(self):
         """Set up test variables and initialize app."""
         self.app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:'})
         db_manager: DatabaseManager = self.app.db_manager
         self.client = self.app.test_client()
-        db_manager.add_words_to_db(self.list_of_tuples)
-        templates = read_templates_from_json("templates.json")
-        for template in templates:
-            added_task_template = db_manager.add_template(template)
+        self.prepopulate_db(db_manager)
         res = self.client.post('/users', json={'user_name': 'abc'})
         self.user_id = res.get_json()["user_id"]
 
