@@ -774,6 +774,41 @@ class DatabaseManager:
     METHODS FOR WORKING WITH TASKS
     """
 
+    def convert_task_obj_to_task(self, task_obj: TaskDBObj) -> Task:
+        """
+        Assumes all parts of task_obj are fully loaded.
+        """
+        template = self.convert_template_obj(task_obj.template)
+        resources = {
+            res.parameter.name: Resource(
+                resource_id=res.resource.id,
+                resource=res.resource.resource_text,
+                target_words=set(LexicalItem(word.word.word, word.word.pos, word.word.freq, word.word.id) for word in res.resource.words),
+            )
+            for res in task_obj.resources
+        }
+        target_words = set(
+            [
+                LexicalItem(
+                    item=word.word.word,
+                    pos=word.word.pos,
+                    freq=word.word.freq,
+                    id=word.word.id,
+                )
+                for word in task_obj.target_words
+            ]
+        )
+
+        Task_type_class = get_task_type_class(template.task_type)
+        task = Task_type_class(
+            template=template,
+            resources=resources,
+            learning_items=target_words,
+            answer=task_obj.answer,
+            task_id=task_obj.id,
+        )
+        return task
+
     def add_task(
         self,
         template_id: int,
@@ -836,8 +871,6 @@ class DatabaseManager:
             logger.error(e)
             raise
 
-    # TODO encapsulate task formation
-
     def get_task_by_id(self, task_id: int) -> Task:
         """
         Retrieves a task by id along with its associated template, resources,
@@ -854,37 +887,7 @@ class DatabaseManager:
                 raise ValueDoesNotExistInDB(f"Task with ID {task_id} does not exist.")
 
             # Map the TaskDBObj to the corresponding Task class (OneWayTranslaitonTask or FourChoiceTask)
-            template = self.convert_template_obj(task_obj.template)
-            resources = {
-                res.parameter.name: Resource(
-                    resource_id=res.resource.id,
-                    resource=res.resource.resource_text,
-                    target_words=set(LexicalItem(word.word.word, word.word.pos, word.word.freq, word.word.id) for word in res.resource.words),
-                )
-                for res in task_obj.resources
-            }
-            target_words = set(
-                [
-                    LexicalItem(
-                        item=word.word.word,
-                        pos=word.word.pos,
-                        freq=word.word.freq,
-                        id=word.word.id,
-                    )
-                    for word in task_obj.target_words
-                ]
-            )
-
-            Task_type_class = get_task_type_class(template.task_type)
-
-            task = Task_type_class(
-                template=template,
-                resources=resources,
-                learning_items=target_words,
-                answer=task_obj.answer,
-                task_id=task_obj.id,
-            )
-
+            task = self.convert_task_obj_to_task(task_obj)
             return task
         except Exception as e:
             session.rollback()
@@ -915,36 +918,7 @@ class DatabaseManager:
             # Convert TaskDBObj to Task instances
             result_tasks = []
             for task_obj in tasks:
-                template = self.convert_template_obj(task_obj.template)
-                resources = {
-                    res.parameter.name: Resource(
-                        resource_id=res.resource.id,
-                        resource=res.resource.resource_text,
-                        target_words=set(LexicalItem(word.word.word, word.word.pos, word.word.freq, word.word.id) for word in res.resource.words),
-                    )
-                    for res in task_obj.resources
-                }
-                target_words = set(
-                    [
-                        LexicalItem(
-                            item=word.word.word,
-                            pos=word.word.pos,
-                            freq=word.word.freq,
-                            id=word.word.id,
-                        )
-                        for word in task_obj.target_words
-                    ]
-                )
-
-                Task_type_class = get_task_type_class(template.task_type)
-                task = Task_type_class(
-                    template=template,
-                    resources=resources,
-                    learning_items=target_words,
-                    answer=task_obj.answer,
-                    task_id=task_obj.id,
-                )
-
+                task = self.convert_task_obj_to_task(task_obj)
                 result_tasks.append(task)
 
             return result_tasks
@@ -973,36 +947,7 @@ class DatabaseManager:
             # Convert TaskDBObj to Task instances
             result_tasks = []
             for task_obj in tasks:
-                template = self.convert_template_obj(task_obj.template)
-                resources = {
-                    res.parameter.name: Resource(
-                        resource_id=res.resource.id,
-                        resource=res.resource.resource_text,
-                        target_words=set(LexicalItem(word.word.word, word.word.pos, word.word.freq, word.word.id) for word in res.resource.words),
-                    )
-                    for res in task_obj.resources
-                }
-                target_words = set(
-                    [
-                        LexicalItem(
-                            item=word.word.word,
-                            pos=word.word.pos,
-                            freq=word.word.freq,
-                            id=word.word.id,
-                        )
-                        for word in task_obj.target_words
-                    ]
-                )
-
-                Task_type_class = get_task_type_class(template.task_type)
-                task = Task_type_class(
-                    template=template,
-                    resources=resources,
-                    learning_items=target_words,
-                    answer=task_obj.answer,
-                    task_id=task_obj.id,
-                )
-
+                task = self.convert_task_obj_to_task(task_obj)
                 result_tasks.append(task)
 
             return result_tasks
@@ -1048,36 +993,7 @@ class DatabaseManager:
             # Convert TaskDBObj to Task instances
             result_tasks = []
             for task_obj in tasks:
-                template = self.convert_template_obj(task_obj.template)
-                resources = {
-                    res.parameter.name: Resource(
-                        resource_id=res.resource.id,
-                        resource=res.resource.resource_text,
-                        target_words=set(LexicalItem(word.word.word, word.word.pos, word.word.freq, word.word.id) for word in res.resource.words),
-                    )
-                    for res in task_obj.resources
-                }
-                target_words = set(
-                    [
-                        LexicalItem(
-                            item=word.word.word,
-                            pos=word.word.pos,
-                            freq=word.word.freq,
-                            id=word.word.id,
-                        )
-                        for word in task_obj.target_words
-                    ]
-                )
-
-                Task_type_class = get_task_type_class(template.task_type)
-                task = Task_type_class(
-                    template=template,
-                    resources=resources,
-                    learning_items=target_words,
-                    answer=task_obj.answer,
-                    task_id=task_obj.id,
-                )
-
+                task = self.convert_task_obj_to_task(task_obj)
                 result_tasks.append(task)
 
             return result_tasks
