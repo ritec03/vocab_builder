@@ -163,11 +163,6 @@ class DatabaseManager:
             Base.metadata.create_all(engine)
             self.Session = scoped_session(sessionmaker(bind=engine))
 
-            templates = read_templates_from_json("templates.json")
-            for template in templates:
-                logger.info(f"Adding the following template now: {template.get_template_string()}")
-                self.add_template(template)
-
             word_freq_output_file_path = "word_freq.txt"
             word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
             filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
@@ -176,9 +171,25 @@ class DatabaseManager:
             list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples][:100]
             
             indices = self.add_words_to_db(list_of_tuples)
+
+            self.prepopulate_db()
+            
             logger.info(indices)
             self.shutdown_session()
 
+    def prepopulate_db(self):
+        # add template and create template dict
+        templates = read_templates_from_json("templates.json")
+        template_dict = dict()
+        for template in templates:
+            added_template_id = self.add_template(template)
+            template_dict[template.get_template_string()] = added_template_id
+        tasks = read_tasks_from_json("tasks.json")
+        for task in tasks:
+            task.template.id = template_dict[task.template.get_template_string()]
+            for key in task.resources.keys():
+                self.add_resource_manual(task.resources[key].resource, task.resources[key].target_words)
+            self.add_task(task.template.id, task.resources, task.learning_items, task.correctAnswer)
 
     def init_app(self, app: Flask):
         engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], echo=False)
@@ -977,6 +988,7 @@ class DatabaseManager:
             # Create a subquery for use in the main query
             task_ids_subquery = task_ids_with_all_words.subquery()
 
+            # BUG SAWarning: Coercing Subquery object into a select() for use in IN(); please pass a select() construct explicitly
             # Now query for tasks where task IDs are in the above subquery results
             tasks_query = (
                 select(TaskDBObj)
@@ -1194,12 +1206,28 @@ class DatabaseManager:
             raise
         
     def save_evaluation_for_task(
-            self, 
-            user_id: int, 
-            lesson_id: int, 
-            order: Tuple[int,int],
-            history_entry: HistoryEntry
+        self, 
+        user_id: int, 
+        lesson_id: int, 
+        order: Tuple[int,int],
+        history_entry: HistoryEntry
     ):
+        """
+        Saves the evaluation for a task in the database.
+
+        Args:
+            user_id (int): The ID of the user.
+            lesson_id (int): The ID of the lesson.
+            order (Tuple[int,int]): The order of the task in the lesson plan (sequence number, attempt number).
+            history_entry (HistoryEntry): The history entry containing the evaluation data.
+
+        Raises:
+            ValueDoesNotExistInDB: If the lesson or user does not exist in the database.
+            Exception: If the retrieved task and submitted task have different IDs.
+
+        Returns:
+            None
+        """
         session = self.Session()
         try:
             # Retrieve the lesson using select statement
@@ -1250,23 +1278,21 @@ class DatabaseManager:
 
             # Create and add the new history entry
             new_history_entry = HistoryEntrieDBObj(
-                evaluation_id=evaluation.id,
                 sequence_number=lesson_task_obj.attempt_num,
                 task_id=task_obj.id,
                 response=history_entry.response
             )
+            evaluation.history_entries.append(new_history_entry)
 
             # Add scores to the new history entry
             for score in history_entry.evaluation_result:
                 new_score = EntryScoreDBObj(
-                    history_entry_id=new_history_entry.id,
                     word_id=score.word_id,
                     score=score.score
                 )
                 new_history_entry.scores.append(new_score)
             
-            session.add(new_history_entry)
-
+            session.flush()
             # Mark the task as completed
             lesson_task_obj.completed = True
             session.commit()
@@ -1550,6 +1576,59 @@ class DatabaseManager:
             session.rollback()
             logger.error(e)
             raise e
+        
+    def finish_lesson(self, user_id: int, lesson_id: int) -> Set[Score]:
+        """
+        Checks that the lesson belongs to the right user, has no uncompleted tasks, 
+        then marks the lesson as completed
+        in the database, then retrieves all the evaluations
+        and calculates final scores for the lesson
+        and returns these scores.
+
+        Parameters:
+            user_id (int): The ID of the user.
+            lesson_id (int): The ID of the lesson to be marked as finished.
+
+        Returns:
+            Set[Score]: A set of final scores calculated for the lesson.
+        """
+        session = self.Session()
+        try:
+            # Retrieve the lesson
+            lesson = session.get(UserLessonDBObj, lesson_id)
+
+            if not lesson:
+                raise ValueDoesNotExistInDB(f"Lesson with ID {lesson_id} does not exist.")
+
+            # Check if the lesson belongs to the right user
+            if lesson.user_id != user_id:
+                raise Exception(f"Lesson with ID {lesson_id} does not belong to user with ID {user_id}.")
+
+            # Check if there are any uncompleted tasks in the lesson
+            if any(task.completed == False for task in lesson.lesson_plan.tasks):
+                raise Exception("Lesson has uncompleted tasks.")
+
+            # Mark the lesson as completed
+            lesson.completed = True
+            session.commit()
+
+            # Retrieve all evaluations for the lesson
+            evaluations = self.get_most_recent_lesson_data(user_id)
+
+            # Calculate final scores for the lesson
+            final_scores = set()
+            # NOTE for now use default by saving the latest score for each evaluation
+            for evaluation in evaluations:
+                final_scores.update(evaluation.get_final_scores_latest())
+
+            self.update_user_scores(user_id, final_scores, lesson_id)
+
+            return final_scores
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to finish lesson: {str(e)}")
+            raise Exception(f"Failed to finish lesson: {str(e)}")
 
     def retrieve_words_for_lesson(
         self, user_id: int, word_num: int

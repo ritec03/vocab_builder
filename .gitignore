@@ -9,3 +9,4 @@ deu_mixed-typical_2011_100K
 *.txt
 *.log
 tasks.json
+*.xml

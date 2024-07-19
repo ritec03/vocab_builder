@@ -11,14 +11,25 @@ lessons_bp = Blueprint('lessons', __name__)
 @lessons_bp.route('/users/<int:user_id>/lessons', methods=['POST'])
 def request_lesson(user_id: int):
     """
-    Retrieves or generates lesson for user_id and returns the first task
-    {
-        "lesson_id": int,
-        "task": {
-            "order": Tuple[int,int],
-            "first_task": json representation of a task
+    Retrieves or generates a lesson for the given user_id and returns the first task.
+
+    Args:
+        user_id (int): The ID of the user.
+
+    Returns:
+        A JSON response containing the lesson information and the first task:
+        {
+            "lesson_id": int,
+            "task": {
+                "order": Tuple[int, int],
+                "first_task": json representation of a task
+            }
         }
-    }
+
+    Raises:
+        404: If the user with the given user_id does not exist.
+        500: If there is an error while retrieving or generating the lesson.
+
     """
     try:
         db_manager: DatabaseManager = current_app.db_manager
@@ -30,10 +41,10 @@ def request_lesson(user_id: int):
         if lesson_head:
             task = lesson_head["task"]["first_task"]
             if not task:
-                    logger.warning("Task is empty.")
+                logger.warning("Task is empty.")
             lesson_head["task"]["first_task"] = task.to_json()
             if not lesson_head["task"]["first_task"]:
-                    logger.warning("Task is empty after converting to dict.")
+                logger.warning("Task is empty after converting to dict.")
             return jsonify(lesson_head), 201
         else:
             lesson_gen = SpacedRepetitionLessonGenerator(user_id, db_manager)
@@ -55,27 +66,35 @@ def request_lesson(user_id: int):
                 logger.warning("Task is empty after converting to dict.")
             return jsonify(gen_lesson_head), 201
     except Exception as e:
-        logger.error(f"General error occured. Error: {str(e)}")
+        logger.error(f"General error occurred. Error: {str(e)}")
         return jsonify({"error": "Server encountered an error."}), 500
 
 
 @lessons_bp.route('/users/<int:user_id>/lessons/<lesson_id>/tasks/submit', methods=['POST'])
 def submit_answer(user_id: int, lesson_id: int):
     """
-    Request structure:
-        {
-            "task_id": int
-            "task_order": Tuple[int,int]
-            "answer": str
-        }
+    Submits the user's answer for a lesson task and returns the evaluation result and the next task.
 
-    Response structure:
+    Args:
+        user_id (int): The ID of the user submitting the answer.
+        lesson_id (int): The ID of the lesson.
+
+    Returns:
+        A JSON response containing the evaluation result and the next task (if available).
+
+        Response structure:
         {
-            "score": List[Dict[int, int]]
+            "score": List[Dict[int, int]],
             "next_task": {
-                "order": Tuple[int, int]
+                "order": Tuple[int, int],
                 "task": json task representation
-            } | None if no more tasks and the lesson is complete.
+            }
+        }
+        OR if the lesson is completed
+        {
+            "score": List[Dict[int, int]],
+            "next_task": None}
+            "final_scores": List[Score]
         }
     """
     try:
@@ -103,7 +122,8 @@ def submit_answer(user_id: int, lesson_id: int):
             return jsonify({"error": "Failed to retrieve the next task."}), 500
         
         if not next_task:
-            return jsonify({"score": list(history_entry.evaluation_result), "next_task": None})
+            final_scores = db_manager.finish_lesson(user_id, lesson_id)
+            return jsonify({"score": list(history_entry.evaluation_result), "next_task": None, "final_scores": list(final_scores)}), 201
         else:
             return jsonify({"score": list(history_entry.evaluation_result), "next_task": {
                 "order": next_task["order"],
