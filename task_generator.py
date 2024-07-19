@@ -28,6 +28,8 @@ class TaskFactory:
         # TODO implement retrieval of tasks based on criteria.
         tasks = self.db_manager.get_tasks_for_words(target_words, 10)
         if tasks:
+            # TODO implement behaviour into learning algorithm that would
+            # choose whether or not to give the user previously done task.
             return random.choice(tasks) # NOTE for now just return a random task
         else:
             return self.generate_task(target_words, template, criteria)
@@ -177,8 +179,24 @@ class AITaskGenerator(TaskGenerator):
     
         # Generate resource tuple
         # NOTE for now assuming every resource relates to every target word
+        """
+        # TODO
+        Problem:
+        Tasks like four choice task have resources that do not have any target words necessarily as three answers are
+        usually wrong. So they can contain anything. What kind of resources should these be?
+        * they can have resource of their own words -> but their target word then is not going to appear on task's
+            target word which is good.
+            * however, there can also be target words that do not appear in the task's target words just because those
+            are not primary target words but still can be studied... but i guess wrong choices in multiple choice
+            are also kind of practice?
+
+        Solution for now -> create resources that just contain words for themselves???
+            * but this would require finding those generated words in the database -> so need functionality for that too.
+        Perhaps, to be solved slightly later.
+        """
         resource_dict = {param: self.db_manager.add_resource_manual(value, target_words) for param, value in output_dict.items()}
         if not self.check_resource_target_word_match(resource_dict, target_words):
             raise ValueError(f"Some target words are not covered by any generated resource.")
 
         return resource_dict, answer
+    

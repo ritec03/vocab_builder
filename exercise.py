@@ -349,6 +349,8 @@ configured at teh lesson generator level and not anywhere downstream.
 """
 
 class SpacedRepetitionLessonGenerator():
+    # TODO define the scope of learning algorithm module more vigorously
+    # and define which parts are configurable by it (task generation, correction, etc.)
     """
     Generator lesson plan for the user.  Lesson plan is generator as follows: 
     * the user learning data is retrieved

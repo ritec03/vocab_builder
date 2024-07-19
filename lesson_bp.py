@@ -97,6 +97,7 @@ def submit_answer(user_id: int, lesson_id: int):
             "final_scores": List[Score]
         }
     """
+    # TODO implement behaviour for unfinished or interrupted lessons.
     try:
         db_manager: DatabaseManager = current_app.db_manager
         data = request.json
