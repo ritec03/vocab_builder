@@ -1,7 +1,9 @@
+from contextlib import contextmanager
 from typing import Set
 import unittest
 
 from sqlalchemy import select
+from app_factory import create_app
 from data_structures import (
     MAX_SCORE,
     MAX_USER_NAME_LENGTH,
@@ -38,17 +40,30 @@ TEST_DB_FILE = "test_database.db"
 
 class TestMixin:
     def setUp(self):
-        # Ensure the test database does not exist before starting each test
-        if os.path.exists(TEST_DB_FILE):
-            os.remove(TEST_DB_FILE)
-        self.db_manager = DatabaseManager(TEST_DB_FILE)
-        # Insert a test user and predefined words
-        self.words_tuples = [
-            ("apple", "NOUN", 50), ("quickly", "ADV", 30), ("happy", "ADJ", 40),
-            ("run", "VERB", 60), ("blue", "ADJ", 20)
-        ]
-        self.word_ids = self.db_manager.add_words_to_db(self.words_tuples)
-        self.user_id = self.db_manager.insert_user("test_user")
+        self.app = create_app({'TESTING': True, 'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:'})
+        self.db_manager: DatabaseManager = self.app.db_manager
+        with session_manager(self.db_manager):
+            # Ensure the test database does not exist before starting each test
+            if os.path.exists(TEST_DB_FILE):
+                os.remove(TEST_DB_FILE)
+            # Insert a test user and predefined words
+            self.words_tuples = [
+                ("apple", "NOUN", 50), ("quickly", "ADV", 30), ("happy", "ADJ", 40),
+                ("run", "VERB", 60), ("blue", "ADJ", 20)
+            ]
+            self.word_ids = self.db_manager.add_words_to_db(self.words_tuples)
+            self.user_id = self.db_manager.insert_user("test_user")
+
+@contextmanager
+def session_manager(db_manager: DatabaseManager):
+    """
+    Simple session manager to emulate app's call for 
+    shutdown_session in between transactions.
+    """
+    try:
+        yield
+    finally:
+        db_manager.shutdown_session()
 
 
 # TestMixin should be inherited first to preserve instance variables
@@ -69,8 +84,9 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
             )  # Inserting the same user name should raise IntegrityError
 
     def test_remove_user_success(self):
-        # Test removing an existing user
-        self.db_manager.remove_user(self.user_id)
+        with session_manager(self.db_manager):
+            # Test removing an existing user
+            self.db_manager.remove_user(self.user_id)
         # Assert that the user is removed successfully
         user = self.db_manager.get_user_by_id(self.user_id)
         self.assertIsNone(user)  # Check that no row is returned
@@ -102,7 +118,8 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
     def test_add_two_word_entries(self):
         # Test adding two word entries to the words table successfully
         test_words = {"cat": ("cat", "NOUN", 10), "dog": ("dog", "NOUN", 5)}
-        word_ids = self.db_manager.add_words_to_db(list(test_words.values()))
+        with session_manager(self.db_manager):
+            word_ids = self.db_manager.add_words_to_db(list(test_words.values()))
 
         # Assert that the entries are added successfully
 
@@ -121,10 +138,12 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
         # Test updating an existing word/pos entry in the words table
         OLD_FREQ = 10
         NEW_FREQ = 15
-        word_list = [("cat", "NOUN", OLD_FREQ)]
-        self.db_manager.add_words_to_db(word_list)  # Add initial entry
-        word_list_update = [("cat", "NOUN", NEW_FREQ)]
-        word_ids = self.db_manager.add_words_to_db(word_list_update)  # Update frequency
+        with session_manager(self.db_manager):
+            word_list = [("cat", "NOUN", OLD_FREQ)]
+            self.db_manager.add_words_to_db(word_list)  # Add initial entry
+        with session_manager(self.db_manager):
+            word_list_update = [("cat", "NOUN", NEW_FREQ)]
+            word_ids = self.db_manager.add_words_to_db(word_list_update)  # Update frequency
 
         # Assert that the frequency is updated
         word = self.db_manager.get_word_by_id(word_ids[0])
@@ -136,15 +155,16 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
         # Test adding an existing word/pos entry to the words table
         new_freq = self.words_tuples[0][2] + 10
         word_pos_duplicate = [(self.words_tuples[0][0], self.words_tuples[0][1], new_freq)]
-        word_ids = self.db_manager.add_words_to_db(
-            word_pos_duplicate
-        )  # Attempt to add the same entry again
+        with session_manager(self.db_manager):
+            word_ids = self.db_manager.add_words_to_db(
+                word_pos_duplicate
+            )  # Attempt to add the same entry again
 
         # Assert that only one word exists and only its freq is updated
         word = self.db_manager.get_word_by_id(word_ids[0])
         self.assertEqual(word.freq, new_freq)  # Check that the frequency remains 10
         # Assert that no new rows are added
-        with self.db_manager.Session.begin() as session:
+        with self.db_manager.Session() as session:
             all_words = session.execute(
                 select(WordDBObj)
             ).all()  # TODO remove sqlalchemy code
@@ -154,19 +174,21 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
         word = self.db_manager.get_word_by_id(self.word_ids[0])
         score_value = 8
         
-        # add lesson
-        template_id = add_template(self.db_manager)
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add lesson
+            template_id = add_template(self.db_manager)
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # add word score
-        self.db_manager.add_word_score(self.user_id, Score(word.id, score_value), lesson_id)
+        with session_manager(self.db_manager):
+            # add word score
+            self.db_manager.add_word_score(self.user_id, Score(word.id, score_value), lesson_id)
 
         # Assert that the word score is added successfully
-        with self.db_manager.Session.begin() as session:
+        with self.db_manager.Session() as session:
             entry = session.execute(
                 select(LearningDataDBObj).where(
                     LearningDataDBObj.user_id == self.user_id,
@@ -179,32 +201,38 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
     def test_add_word_score_two_scores_for_word(self):
         word = self.db_manager.get_word_by_id(self.word_ids[0])
 
-        OLD_SCORE = 8
-        NEW_SCORE = 5
-        template_id = add_template(self.db_manager)
+        with session_manager(self.db_manager):
+            OLD_SCORE = 8
+            NEW_SCORE = 5
+            template_id = add_template(self.db_manager)
 
-        # add first lesson
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add first lesson
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # Add old score
-        self.db_manager.add_word_score(self.user_id, Score(word.id, OLD_SCORE), lesson_id)
+        with session_manager(self.db_manager):
+            # Add old score
+            self.db_manager.add_word_score(self.user_id, Score(word.id, OLD_SCORE), lesson_id)
+
         # Assert that the word score is added successfully
         score = self.db_manager.get_score(self.user_id, word.id, lesson_id)
         self.assertEqual(score, OLD_SCORE)  # Check that the score is OLD_SCORE
 
-        # add second lesson
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, NEW_SCORE)})
-        lesson = [evaluation1]
-        second_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add second lesson
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, NEW_SCORE)})
+            lesson = [evaluation1]
+            second_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # Add the next score for same word
-        self.db_manager.add_word_score(self.user_id, Score(word.id, NEW_SCORE), second_lesson_id)
+        with session_manager(self.db_manager):
+            # Add the next score for same word
+            self.db_manager.add_word_score(self.user_id, Score(word.id, NEW_SCORE), second_lesson_id)
 
         # Assert that the second score was added
         updated_score = self.db_manager.get_score(self.user_id, word.id, second_lesson_id)
@@ -213,19 +241,23 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
     def test_add_word_score_two_scores_for_word_same_lesson(self):
         word = self.db_manager.get_word_by_id(self.word_ids[0])
 
-        OLD_SCORE = 8
-        NEW_SCORE = 5
-        template_id = add_template(self.db_manager)
+        with session_manager(self.db_manager):
+            OLD_SCORE = 8
+            NEW_SCORE = 5
+            template_id = add_template(self.db_manager)
 
-        # add first lesson
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add first lesson
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # Add old score
-        self.db_manager.add_word_score(self.user_id, Score(word.id, OLD_SCORE), lesson_id)
+        with session_manager(self.db_manager):
+            # Add old score
+            self.db_manager.add_word_score(self.user_id, Score(word.id, OLD_SCORE), lesson_id)
+
         # Assert that the word score is added successfully
         score = self.db_manager.get_score(self.user_id, word.id, lesson_id)
         self.assertEqual(score, OLD_SCORE)  # Check that the score is OLD_SCORE
@@ -247,13 +279,14 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
         word = self.db_manager.get_word_by_id(self.word_ids[0])
         score_value = 8
         
-        # add lesson
-        template_id = add_template(self.db_manager)
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add lesson
+            template_id = add_template(self.db_manager)
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
         with self.assertRaises(ValueDoesNotExistInDB):
             # add word score
@@ -263,13 +296,14 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
         word = self.db_manager.get_word_by_id(self.word_ids[0])
         score_value = 8
         
-        # add lesson
-        template_id = add_template(self.db_manager)
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add lesson
+            template_id = add_template(self.db_manager)
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
         with self.assertRaises(ValueDoesNotExistInDB):
             # add word score
@@ -279,13 +313,14 @@ class TestDatabaseFunctions(TestMixin, unittest.TestCase):
         word = self.db_manager.get_word_by_id(self.word_ids[0])
         score_value = 8
         
-        # add lesson
-        template_id = add_template(self.db_manager)
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add lesson
+            template_id = add_template(self.db_manager)
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
       
         # Test adding a word score with an incorrect score
         with self.assertRaises(ValueError):
@@ -307,27 +342,31 @@ class TestUpdateUserScores(TestMixin, unittest.TestCase):
         OLD_SCORE_1 = 4
         NEW_SCORE = 5
         NEW_SCORE_1 = 7
-        template_id = add_template(self.db_manager)
+        with session_manager(self.db_manager):
+            template_id = add_template(self.db_manager)
 
-        # add first lesson
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
-        evaluation1.add_entry(task, "response2", {Score(word_1.id, OLD_SCORE_1)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add first lesson
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
+            evaluation1.add_entry(task, "response2", {Score(word_1.id, OLD_SCORE_1)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # add second lesson
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, NEW_SCORE)})
-        evaluation1.add_entry(task, "response2", {Score(word_1.id, NEW_SCORE_1)})
-        lesson = [evaluation1]
-        second_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add second lesson
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, NEW_SCORE)})
+            evaluation1.add_entry(task, "response2", {Score(word_1.id, NEW_SCORE_1)})
+            lesson = [evaluation1]
+            second_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # Add old score
-        self.db_manager.update_user_scores(self.user_id, {Score(word.id, OLD_SCORE), Score(word_1.id, OLD_SCORE_1)}, lesson_id)
-        self.db_manager.update_user_scores(self.user_id, {Score(word.id, NEW_SCORE), Score(word_1.id, NEW_SCORE_1)}, second_lesson_id)
+        with session_manager(self.db_manager):
+            # Add old score
+            self.db_manager.update_user_scores(self.user_id, {Score(word.id, OLD_SCORE), Score(word_1.id, OLD_SCORE_1)}, lesson_id)
+            self.db_manager.update_user_scores(self.user_id, {Score(word.id, NEW_SCORE), Score(word_1.id, NEW_SCORE_1)}, second_lesson_id)
 
         # Assert that the word score is added successfully
         score = self.db_manager.get_score(self.user_id, word.id, lesson_id)
@@ -344,23 +383,26 @@ class TestUpdateUserScores(TestMixin, unittest.TestCase):
     def test_update_user_scores_two_scores_for_word_same_lesson(self):
         word = self.db_manager.get_word_by_id(self.word_ids[0])
 
-        OLD_SCORE = 8
-        NEW_SCORE = 5
-        template_id = add_template(self.db_manager)
+        with session_manager(self.db_manager):
+            OLD_SCORE = 8
+            NEW_SCORE = 5
+            template_id = add_template(self.db_manager)
 
-        # add first lesson
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add first lesson
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, OLD_SCORE)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        # add second lesson
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, NEW_SCORE)})
-        lesson = [evaluation1]
-        second_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add second lesson
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, NEW_SCORE)})
+            lesson = [evaluation1]
+            second_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
         with self.assertRaises(ValueDoesNotExistInDB):
             # Add old score
@@ -370,13 +412,14 @@ class TestUpdateUserScores(TestMixin, unittest.TestCase):
         word = self.db_manager.get_word_by_id(self.word_ids[0])
         score_value = 8
         
-        # add lesson
-        template_id = add_template(self.db_manager)
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # add lesson
+            template_id = add_template(self.db_manager)
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
         with self.assertRaises(ValueDoesNotExistInDB):
             # add word score
@@ -386,14 +429,15 @@ class TestUpdateUserScores(TestMixin, unittest.TestCase):
     def test_update_user_scores_nonexistent_user(self):
         word = self.db_manager.get_word_by_id(self.word_ids[0])
         score_value = 8
-        
-        # add lesson
-        template_id = add_template(self.db_manager)
-        task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+
+        with session_manager(self.db_manager):        
+            # add lesson
+            template_id = add_template(self.db_manager)
+            task = create_example_task(self.db_manager, "blah", "blah", {word}, template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(word.id, score_value)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
         with self.assertRaises(ValueDoesNotExistInDB):
             # add word score
@@ -402,18 +446,21 @@ class TestUpdateUserScores(TestMixin, unittest.TestCase):
 class TestRetrieveUserScores(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        self.template_id = add_template(self.db_manager)
-        # add first lesson
-        self.word_1 = self.db_manager.get_word_by_id(self.word_ids[0])
-        self.word_2 = self.db_manager.get_word_by_id(self.word_ids[2])
+        with session_manager(self.db_manager):
+            self.template_id = add_template(self.db_manager)
+            # add first lesson
+            self.word_1 = self.db_manager.get_word_by_id(self.word_ids[0])
+            self.word_2 = self.db_manager.get_word_by_id(self.word_ids[2])
 
-        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1, self.word_2}, self.template_id)
-        evaluation1 = Evaluation()
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            task = create_example_task(self.db_manager, "blah", "blah", {self.word_1, self.word_2}, self.template_id)
+            evaluation1 = Evaluation()
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
 
-        self.db_manager.add_word_score(self.user_id, Score(self.word_1.id, 5), lesson_id)
-        self.db_manager.add_word_score(self.user_id, Score(self.word_2.id, 8), lesson_id)
+        with session_manager(self.db_manager):
+            self.db_manager.add_word_score(self.user_id, Score(self.word_1.id, 5), lesson_id)
+            self.db_manager.add_word_score(self.user_id, Score(self.word_2.id, 8), lesson_id)
 
     def test_user_with_scores(self):
         """
@@ -427,12 +474,15 @@ class TestRetrieveUserScores(TestMixin, unittest.TestCase):
         self.assertEqual(scores.get(self.word_2.id)["score"].score, 8)
 
     def test_two_scores_one_updated(self):
-        NEW_SCORE = 1
-        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1, self.word_2}, self.template_id)
-        evaluation1 = Evaluation()
-        lesson = [evaluation1]
-        new_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
-        self.db_manager.add_word_score(self.user_id, Score(self.word_1.id, NEW_SCORE), new_lesson_id)
+        with session_manager(self.db_manager):
+            NEW_SCORE = 1
+            task = create_example_task(self.db_manager, "blah", "blah", {self.word_1, self.word_2}, self.template_id)
+        with session_manager(self.db_manager):
+            evaluation1 = Evaluation()
+            lesson = [evaluation1]
+            new_lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            self.db_manager.add_word_score(self.user_id, Score(self.word_1.id, NEW_SCORE), new_lesson_id)
         
         scores = self.db_manager.get_latest_word_score_for_user(self.user_id)
         self.assertIsInstance(scores, dict)
@@ -445,7 +495,8 @@ class TestRetrieveUserScores(TestMixin, unittest.TestCase):
         """
         Test retrieving scores for a user without scores.
         """
-        another_user_id = self.db_manager.insert_user("another_user")
+        with session_manager(self.db_manager):
+            another_user_id = self.db_manager.insert_user("another_user")
         scores = self.db_manager.get_latest_word_score_for_user(another_user_id)
         self.assertIsInstance(scores, dict)
         self.assertEqual(len(scores), 0)
@@ -484,8 +535,9 @@ class TestTemplates(TestMixin, unittest.TestCase):
         )
 
     def test_add_get_template(self):
-        # add template
-        template_id = self.db_manager.add_template(self.template)
+        with session_manager(self.db_manager):
+            # add template
+            template_id = self.db_manager.add_template(self.template)
 
         # retrieve and check template
         retrieved_template = self.db_manager.get_template_by_id(template_id)
@@ -520,7 +572,9 @@ class TestTemplates(TestMixin, unittest.TestCase):
             task_type=TaskType.ONE_WAY_TRANSLATION,
         )
 
-        self.db_manager.add_template(self.template)
+        with session_manager(self.db_manager):
+            self.db_manager.add_template(self.template)
+
         with self.assertRaises(ValueError):
             self.db_manager.add_template(template_2)
 
@@ -544,11 +598,14 @@ class TestTemplates(TestMixin, unittest.TestCase):
     #     with self.assertRaises(ValueError):
     #         self.db_manager.add_template(template_2)
 
-    def test_remove_template(self):
-        self.fail()
+    # TODO complete the remove template tests
+    # def test_remove_template(self):
+    #     self.fail()
 
     def test_get_template_parameters(self):
-        template_id = self.db_manager.add_template(self.template)
+        with session_manager(self.db_manager):
+            template_id = self.db_manager.add_template(self.template)
+
         template_params = self.db_manager.get_template_parameters(template_id)
 
         self.assertEqual(len(list(template_params.keys())), 2)
@@ -565,8 +622,9 @@ class TestTemplates(TestMixin, unittest.TestCase):
         )
 
     def test_get_template_parameters_no_params(self):
-        self.template.parameter_description = {}
-        template_id = self.db_manager.add_template(self.template)
+        with session_manager(self.db_manager):
+            self.template.parameter_description = {}
+            template_id = self.db_manager.add_template(self.template)
         template_params = self.db_manager.get_template_parameters(template_id)
 
         self.assertEqual(template_params, None)
@@ -577,7 +635,9 @@ class TestTemplates(TestMixin, unittest.TestCase):
 
         # TODO add function for equality of tempaltes
 
-        self.db_manager.add_template(self.template)
+        with session_manager(self.db_manager):    
+            self.db_manager.add_template(self.template)
+
         templates_1 = self.db_manager.get_templates_by_task_type(
             self.template.task_type
         )
@@ -593,8 +653,9 @@ class TestTemplates(TestMixin, unittest.TestCase):
             parameter_description={**self.parameter_description, **{"blah": "blah"}},
             task_type=self.template.task_type,
         )
+        with session_manager(self.db_manager):
+            self.db_manager.add_template(template_2)
 
-        self.db_manager.add_template(template_2)
         templates_2 = self.db_manager.get_templates_by_task_type(template_2.task_type)
         self.assertEqual(len(templates_2), 2)
         self.assertIsInstance(templates_2[0], TaskTemplate)
@@ -612,10 +673,11 @@ class TestResources(TestMixin, unittest.TestCase):
         self.word_2 = self.db_manager.get_word_by_id(2)
 
     def test_add_get_resource_manual(self):
-        resourse_str = "test resourse"
-        resource = self.db_manager.add_resource_manual(
-            resourse_str, set([self.word_1, self.word_2])
-        )
+        with session_manager(self.db_manager):
+            resourse_str = "test resourse"
+            resource = self.db_manager.add_resource_manual(
+                resourse_str, set([self.word_1, self.word_2])
+            )
 
         retrieved_resource = self.db_manager.get_resource_by_id(resource.resource_id)
 
@@ -626,46 +688,50 @@ class TestResources(TestMixin, unittest.TestCase):
         self.assertEqual(retrieved_resource.resource_id, resource.resource_id)
 
     def test_resources_by_target_word(self):
-        target_word = self.word_1
-        # add resource
-        resource1 = self.db_manager.add_resource_manual(
-            "resourse_str1", set([self.word_1, self.word_2])
-        )
-        resource2 = self.db_manager.add_resource_manual(
-            "resourse_str2", set([self.word_2])
-        )
+        with session_manager(self.db_manager):
+            target_word = self.word_1
+            # add resource
+            resource1 = self.db_manager.add_resource_manual(
+                "resourse_str1", set([self.word_1, self.word_2])
+            )
+            resource2 = self.db_manager.add_resource_manual(
+                "resourse_str2", set([self.word_2])
+            )
 
         retrieved_resources = self.db_manager.get_resources_by_target_word(target_word)
         self.assertEqual(len(retrieved_resources), 1)
         self.assertEqual(retrieved_resources[0].resource_id, resource1.resource_id)
 
     def test_resources_by_target_word_none(self):
-        target_word = self.word_1
-        # add resource
-        resource1 = self.db_manager.add_resource_manual(
-            "resourse_str1", set([self.word_2])
-        )
-        resource2 = self.db_manager.add_resource_manual(
-            "resourse_str2", set([self.word_2])
-        )
+        with session_manager(self.db_manager):
+            target_word = self.word_1
+            # add resource
+            resource1 = self.db_manager.add_resource_manual(
+                "resourse_str1", set([self.word_2])
+            )
+            resource2 = self.db_manager.add_resource_manual(
+                "resourse_str2", set([self.word_2])
+            )
 
         retrieved_resources = self.db_manager.get_resources_by_target_word(target_word)
         self.assertEqual(len(retrieved_resources), 0)
 
     def test_remove_resource_no_associated_tasks(self):
-        # add two resources
-        resource1 = self.db_manager.add_resource_manual(
-            "resourse_str1", set([self.word_2])
-        )
-        resource2 = self.db_manager.add_resource_manual(
-            "resourse_str2", set([self.word_2])
-        )
+        with session_manager(self.db_manager):
+            # add two resources
+            resource1 = self.db_manager.add_resource_manual(
+                "resourse_str1", set([self.word_2])
+            )
+            resource2 = self.db_manager.add_resource_manual(
+                "resourse_str2", set([self.word_2])
+            )
 
-        # remove a resource
-        self.db_manager.remove_resource(resource1.resource_id)
+        with session_manager(self.db_manager):
+            # remove a resource
+            self.db_manager.remove_resource(resource1.resource_id)
 
         # check
-        with self.db_manager.Session.begin() as session:
+        with self.db_manager.Session() as session:
             resources = session.scalars(select(ResourceDBObj)).all()
             self.assertEqual(len(resources), 1)
 
@@ -685,28 +751,30 @@ class TestResources(TestMixin, unittest.TestCase):
             )
 
     def test_remove_resource_with_associated_tasks(self):
-        # add two resources
-        resource1 = self.db_manager.add_resource_manual(
-            "resourse_str1", set([self.word_2])
-        )
-        resource2 = self.db_manager.add_resource_manual(
-            "resourse_str2", set([self.word_2])
-        )
+        with session_manager(self.db_manager):
+            # add two resources
+            resource1 = self.db_manager.add_resource_manual(
+                "resourse_str1", set([self.word_2])
+            )
+            resource2 = self.db_manager.add_resource_manual(
+                "resourse_str2", set([self.word_2])
+            )
 
-        # associate task with resource 1
-        template = TaskTemplate(
-            target_language=Language.GERMAN,
-            starting_language=Language.ENGLISH,
-            template_string="blah",
-            template_description="blah",
-            template_examples=["eg1"],
-            parameter_description={"sentence": "blah"},
-            task_type=TaskType.ONE_WAY_TRANSLATION,
-        )
-        template_id = self.db_manager.add_template(template)
-        template.id = template_id
-        resources = {"sentence": resource1}
-        self.db_manager.add_task(template_id, resources, {self.word_1}, "answer")
+        with session_manager(self.db_manager):
+            # associate task with resource 1
+            template = TaskTemplate(
+                target_language=Language.GERMAN,
+                starting_language=Language.ENGLISH,
+                template_string="blah",
+                template_description="blah",
+                template_examples=["eg1"],
+                parameter_description={"sentence": "blah"},
+                task_type=TaskType.ONE_WAY_TRANSLATION,
+            )
+            template_id = self.db_manager.add_template(template)
+            template.id = template_id
+            resources = {"sentence": resource1}
+            self.db_manager.add_task(template_id, resources, {self.word_1}, "answer")
 
         # remove a resource
         with self.assertRaises(InvalidDelete):
@@ -739,15 +807,18 @@ class TestTasks(TestMixin, unittest.TestCase):
             parameter_description=self.parameter_description,
             task_type=TaskType.ONE_WAY_TRANSLATION,
         )
-        self.template_id = self.db_manager.add_template(self.template)
+        with session_manager(self.db_manager):
+            self.template_id = self.db_manager.add_template(self.template)
         self.template.id = self.template_id
-        # add test resources
-        self.resource1 = self.db_manager.add_resource_manual(
-            "test resource 1", set([self.word_1])
-        )
-        self.resource2 = self.db_manager.add_resource_manual(
-            "test resource 2", set([self.word_2])
-        )
+
+        with session_manager(self.db_manager):
+            # add test resources
+            self.resource1 = self.db_manager.add_resource_manual(
+                "test resource 1", set([self.word_1])
+            )
+            self.resource2 = self.db_manager.add_resource_manual(
+                "test resource 2", set([self.word_2])
+            )
         self.resources = {"sentence": self.resource1, "phrase": self.resource2}
 
         self.template2 = TaskTemplate(
@@ -773,7 +844,8 @@ class TestTasks(TestMixin, unittest.TestCase):
             "C": self.resource2,
             "D": self.resource2,
         }
-        self.template2_id = self.db_manager.add_template(self.template2)
+        with session_manager(self.db_manager):
+            self.template2_id = self.db_manager.add_template(self.template2)
 
     def test_add_and_get_task(self):
         """
@@ -782,13 +854,14 @@ class TestTasks(TestMixin, unittest.TestCase):
         target_words = set([self.word_1, self.word_2])
         answer = "The correct translation"
 
-        # Add the task to the database
-        task = self.db_manager.add_task(
-            template_id=self.template_id,
-            resources=self.resources,
-            target_words=target_words,
-            answer=answer,
-        )
+        with session_manager(self.db_manager):
+            # Add the task to the database
+            task = self.db_manager.add_task(
+                template_id=self.template_id,
+                resources=self.resources,
+                target_words=target_words,
+                answer=answer,
+            )
 
         # Retrieve the task by ID
         retrieved_task = self.db_manager.get_task_by_id(task.id)
@@ -811,24 +884,27 @@ class TestTasks(TestMixin, unittest.TestCase):
         """
         Test by adding three tasks with two tasks of same task type and returning those.
         """
-        self.db_manager.add_task(
-            template_id=self.template2_id,
-            resources=self.four_choice_resources,
-            target_words=set(),
-            answer="A",
-        )
-        self.db_manager.add_task(
-            template_id=self.template_id,
-            resources=self.resources,
-            target_words=set(),
-            answer="Answer 2",
-        )
-        self.db_manager.add_task(
-            template_id=self.template2_id,
-            resources=self.four_choice_resources,
-            target_words=set(),
-            answer="B",
-        )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template2_id,
+                resources=self.four_choice_resources,
+                target_words=set(),
+                answer="A",
+            )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template_id,
+                resources=self.resources,
+                target_words=set(),
+                answer="Answer 2",
+            )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template2_id,
+                resources=self.four_choice_resources,
+                target_words=set(),
+                answer="B",
+            )
 
         # Fetch tasks by type
         tasks = self.db_manager.get_tasks_by_type(self.template2.task_type)
@@ -861,24 +937,27 @@ class TestTasks(TestMixin, unittest.TestCase):
         """
         # Add multiple tasks with different templates
 
-        self.db_manager.add_task(
-            template_id=self.template_id,
-            resources=self.resources,
-            target_words=set(),
-            answer="Answer 1",
-        )
-        self.db_manager.add_task(
-            template_id=self.template2_id,
-            resources=self.four_choice_resources,
-            target_words=set(),
-            answer="A",
-        )
-        self.db_manager.add_task(
-            template_id=self.template2_id,
-            resources=self.four_choice_resources,
-            target_words=set(),
-            answer="B",
-        )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template_id,
+                resources=self.resources,
+                target_words=set(),
+                answer="Answer 1",
+            )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template2_id,
+                resources=self.four_choice_resources,
+                target_words=set(),
+                answer="A",
+            )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template2_id,
+                resources=self.four_choice_resources,
+                target_words=set(),
+                answer="B",
+            )
 
         # Fetch tasks by the first template
         tasks = self.db_manager.get_tasks_by_template(self.template2_id)
@@ -897,7 +976,8 @@ class TestTasks(TestMixin, unittest.TestCase):
             parameter_description={"sentence": "Non-existent description."},
             task_type=TaskType.ONE_WAY_TRANSLATION,
         )
-        another_template_id = self.db_manager.add_template(another_template)
+        with session_manager(self.db_manager):
+            another_template_id = self.db_manager.add_template(another_template)
         tasks = self.db_manager.get_tasks_by_template(another_template_id)
         self.assertEqual(len(tasks), 0)  # No tasks should be returned
 
@@ -906,23 +986,26 @@ class TestTasks(TestMixin, unittest.TestCase):
         Test retrieving tasks whose target words include all specified words.
         """
         target_words_subset = {self.word_1}  # This should match tasks with word_1
-        self.db_manager.add_task(
-            template_id=self.template_id,
-            resources=self.resources,
-            target_words={self.word_1},
-            answer="Extended",
-        )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template_id,
+                resources=self.resources,
+                target_words={self.word_1},
+                answer="Extended",
+            )
 
-        additional_word_id = self.db_manager.add_words_to_db(
-            [("additional", "noun", 10)]
-        )[0]
+        with session_manager(self.db_manager):
+            additional_word_id = self.db_manager.add_words_to_db(
+                [("additional", "noun", 10)]
+            )[0]
         additional_word = self.db_manager.get_word_by_id(additional_word_id)
-        self.db_manager.add_task(
-            template_id=self.template_id,
-            resources=self.resources,
-            target_words={self.word_1, additional_word},
-            answer="Extended",
-        )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template_id,
+                resources=self.resources,
+                target_words={self.word_1, additional_word},
+                answer="Extended",
+            )
 
         # Test retrieving tasks that must include 'word_1'
         tasks = self.db_manager.get_tasks_for_words(target_words_subset)
@@ -933,7 +1016,8 @@ class TestTasks(TestMixin, unittest.TestCase):
         """
         Test retrieving tasks where no tasks contain the specified target words.
         """
-        word_id = self.db_manager.add_words_to_db([("additional", "noun", 10)])[0]
+        with session_manager(self.db_manager):
+            word_id = self.db_manager.add_words_to_db([("additional", "noun", 10)])[0]
         word = self.db_manager.get_word_by_id(word_id)
         tasks = self.db_manager.get_tasks_for_words({word})
         self.assertEqual(len(tasks), 0)  # No tasks should match
@@ -943,12 +1027,13 @@ class TestTasks(TestMixin, unittest.TestCase):
         Test retrieving tasks where there are two target words
         """
         two_words_ids = {self.word_1, self.word_2}
-        self.db_manager.add_task(
-            template_id=self.template_id,
-            resources=self.resources,
-            target_words=two_words_ids,
-            answer="Exact Match",
-        )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template_id,
+                resources=self.resources,
+                target_words=two_words_ids,
+                answer="Exact Match",
+            )
 
         tasks = self.db_manager.get_tasks_for_words(two_words_ids)
         self.assertTrue(all(two_words_ids == task.learning_items for task in tasks))
@@ -959,12 +1044,13 @@ class TestTasks(TestMixin, unittest.TestCase):
         Test retrieving tasks where the task has only one word out of two required
         """
         two_words = {self.word_1, self.word_2}
-        self.db_manager.add_task(
-            template_id=self.template_id,
-            resources=self.resources,
-            target_words={self.word_1},
-            answer="Superset Match",
-        )
+        with session_manager(self.db_manager):
+            self.db_manager.add_task(
+                template_id=self.template_id,
+                resources=self.resources,
+                target_words={self.word_1},
+                answer="Superset Match",
+            )
 
         tasks = self.db_manager.get_tasks_for_words(two_words)
         self.assertGreaterEqual(
@@ -996,17 +1082,19 @@ class TestTasks(TestMixin, unittest.TestCase):
             answer="Extended",
         )
 
-        with self.db_manager.Session.begin() as session:
+        with self.db_manager.Session() as session:
             num_of_tasks = len(session.scalars(select(TaskDBObj)).all())
             self.assertEqual(num_of_tasks, 2)
 
             # remove one
             self.db_manager.remove_task(task2.id)
-            # check
 
+            # check
+            num_of_tasks = len(session.scalars(select(TaskDBObj)).all())
+            self.assertEqual(num_of_tasks, 1)
+            
             with self.assertRaises(ValueDoesNotExistInDB):
                 retrieved_task = self.db_manager.get_task_by_id(task2.id)
-
             # Ensure that no target words or resources are linked to the deleted task
             remaining_task_target_words = session.scalars(
                 select(TaskTargetWordDBObj).where(
@@ -1028,10 +1116,6 @@ class TestTasks(TestMixin, unittest.TestCase):
                 "No resources should remain for the deleted task",
             )
 
-            num_of_tasks = len(session.scalars(select(TaskDBObj)).all())
-            self.assertEqual(num_of_tasks, 1)
-
-            #
             retrieved_task = self.db_manager.get_task_by_id(task1.id)
 
             # Check that the retrieved task matches the added task
@@ -1072,7 +1156,8 @@ class TestUserLessonData(TestMixin, unittest.TestCase):
         super().setUp()
         # add template
         # Create a template with two parameters
-        self.template_id = add_template(self.db_manager)
+        with session_manager(self.db_manager):
+            self.template_id = add_template(self.db_manager)
         word_1 = self.db_manager.get_word_by_id(1)
         word_2 = self.db_manager.get_word_by_id(2)
         self.select_words = {word_1, word_2}
@@ -1083,8 +1168,10 @@ class TestUserLessonData(TestMixin, unittest.TestCase):
             os.remove(TEST_DB_FILE)
 
     def test_add_user_lesson_data(self):
-        lesson_data = create_example_lesson(self.db_manager, self.select_words, self.template_id)
-        self.db_manager.save_user_lesson_data(self.user_id, lesson_data)
+        with session_manager(self.db_manager):
+            lesson_data = create_example_lesson(self.db_manager, self.select_words, self.template_id)
+        with session_manager(self.db_manager):
+            self.db_manager.save_user_lesson_data(self.user_id, lesson_data)
 
         # Validate the insertion of user lesson data
         # Check user_lessons
@@ -1092,7 +1179,7 @@ class TestUserLessonData(TestMixin, unittest.TestCase):
         if not previous_lesson_data:
             self.fail()
 
-        with self.db_manager.Session.begin() as session:
+        with self.db_manager.Session() as session:
             lesson_number = len(
                 session.scalars(
                     select(UserLessonDBObj).where(UserLessonDBObj.id == self.user_id)
@@ -1120,20 +1207,25 @@ class TestRetrieveWordsForLesson(TestMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
 
-        self.template_id = add_template(self.db_manager)
-        # add first lesson
-        self.word_1 = self.db_manager.get_word_by_id(self.word_ids[0])
-        self.word_2 = self.db_manager.get_word_by_id(self.word_ids[2])
+        with session_manager(self.db_manager):
+            self.template_id = add_template(self.db_manager)
+            # add first lesson
+            self.word_1 = self.db_manager.get_word_by_id(self.word_ids[0])
+            self.word_2 = self.db_manager.get_word_by_id(self.word_ids[2])
 
-        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1, self.word_2}, self.template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(self.word_1.id, 7)})
-        evaluation1.add_entry(task, "response1", {Score(self.word_2.id, 8)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
-        # Assume 'apple' and 'happy' get scores for the user
-        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[0], 7), lesson_id) # apple 
-        self.db_manager.add_word_score(self.user_id, Score(self.word_ids[2], 8), lesson_id) # happy
+        with session_manager(self.db_manager):
+            task = create_example_task(self.db_manager, "blah", "blah", {self.word_1, self.word_2}, self.template_id)
+        with session_manager(self.db_manager):
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(self.word_1.id, 7)})
+            evaluation1.add_entry(task, "response1", {Score(self.word_2.id, 8)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # Assume 'apple' and 'happy' get scores for the user
+            self.db_manager.add_word_score(self.user_id, Score(self.word_ids[0], 7), lesson_id) # apple 
+            self.db_manager.add_word_score(self.user_id, Score(self.word_ids[2], 8), lesson_id) # happy
+            self.db_manager.shutdown_session() # NOTE session need to be shutdown to detect any uncommitted transactions
 
     def test_successful_retrieval(self):
         retrieved_words = self.db_manager.retrieve_words_for_lesson(self.user_id, 2)
@@ -1146,33 +1238,37 @@ class TestRetrieveWordsForLesson(TestMixin, unittest.TestCase):
             self.db_manager.retrieve_words_for_lesson(9999, 2)  # Assuming 9999 does not exist
 
     def test_empty_result_set(self):        
-        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1}, self.template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(self.word_1.id, 7)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            task = create_example_task(self.db_manager, "blah", "blah", {self.word_1}, self.template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(self.word_1.id, 7)})
+            lesson = [evaluation1]
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+        with session_manager(self.db_manager):
+            # User scored on all words
+            for word_id in self.word_ids:
+                self.db_manager.add_word_score(self.user_id, Score(word_id, 5), lesson_id)
 
-        # User scored on all words
-        for word_id in self.word_ids:
-            self.db_manager.add_word_score(self.user_id, Score(word_id, 5), lesson_id)
         retrieved_words = self.db_manager.retrieve_words_for_lesson(self.user_id, 2)
         self.assertEqual(len(retrieved_words), 0)
 
     def test_partial_word_retrieval_due_to_scores(self):
-        task = create_example_task(self.db_manager, "blah", "blah", {self.word_1}, self.template_id)
-        evaluation1 = Evaluation()
-        evaluation1.add_entry(task, "response1", {Score(self.word_1.id, 7)})
-        lesson = [evaluation1]
-        lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
-
-        # Adding additional words
-        additional_words = [
-            ("tree", "NOUN", 45), ("bright", "ADJ", 35), ("write", "VERB", 25)
-        ]
-        additional_word_ids = self.db_manager.add_words_to_db(additional_words)
-        # Assume 'tree' and 'bright' get scores for the user
-        self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[0], 6), lesson_id) # tree 
-        self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[1], 9), lesson_id) # bright
+        with session_manager(self.db_manager):
+            task = create_example_task(self.db_manager, "blah", "blah", {self.word_1}, self.template_id)
+            evaluation1 = Evaluation()
+            evaluation1.add_entry(task, "response1", {Score(self.word_1.id, 7)})
+            lesson = [evaluation1]
+        with session_manager(self.db_manager):
+            lesson_id = self.db_manager.save_user_lesson_data(self.user_id, lesson)
+            # Adding additional words
+            additional_words = [
+                ("tree", "NOUN", 45), ("bright", "ADJ", 35), ("write", "VERB", 25)
+            ]
+        with session_manager(self.db_manager):
+            additional_word_ids = self.db_manager.add_words_to_db(additional_words)
+            # Assume 'tree' and 'bright' get scores for the user
+            self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[0], 6), lesson_id) # tree 
+            self.db_manager.add_word_score(self.user_id, Score(additional_word_ids[1], 9), lesson_id) # bright
 
         # The user now has scores for 'apple', 'happy', 'tree', and 'bright'.
         # Remaining without scores are 'quickly', 'run', 'blue', 'write'.

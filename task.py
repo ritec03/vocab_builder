@@ -58,6 +58,25 @@ class Task(ABC):
         """
         return self.evaluation_method.evaluate(self.correctAnswer, user_input, self.learning_items)
     
+    # TODO change to json methods to be more consistent
+    def to_json(self):
+        converted_resources = dict()
+        for key in self.resources:
+            converted_res = {
+                "id": self.resources[key].resource_id,
+                "resource": self.resources[key].resource,
+                "target_words": [word.to_json() for word in self.resources[key].target_words]
+            }
+            converted_resources[key] = converted_res
+        return {
+            'task_string': self.produce_task(),
+            'template': self.template.to_json(),  # Assuming template has to_json method
+            'resources': converted_resources,
+            'learning_items': [item.to_json() for item in self.learning_items],
+            'correctAnswer': self.correctAnswer,
+            'id': self.id
+        }
+    
 class OneWayTranslaitonTask(Task):
     """
     Defines a simple translation task that contains a task description,
@@ -115,7 +134,7 @@ class FourChoiceTask(Task):
             if not isinstance(resources.get(key), Resource):
                 raise ValueError(f"Resource for option {key} is not a valid Resource instance.")
 
-        super().__init__(template, resources, learning_items, getattr(FourChoiceAnswer, answer), task_id)
+        super().__init__(template, resources, learning_items, answer, task_id)
 
     def initialize_evaluation_method(self) -> EvaluationMethod:
         return AIEvaluation({"task": self.produce_task()})
@@ -124,6 +143,12 @@ class FourChoiceTask(Task):
         if user_input not in [a.name for a in list(FourChoiceAnswer)]:
             raise ValueError("User input is not one of four options.")
         return super().evaluate_user_input(user_input)
+
+    # TODO change to json methods to be more consistent
+    def to_json(self):
+        repr = super().to_json()
+        repr["correctAnswer"] = self.correctAnswer
+        return repr
     
 def get_task_type_class(task_type: TaskType) -> Type[Task]:
     if task_type == TaskType.FOUR_CHOICE:
@@ -132,3 +157,4 @@ def get_task_type_class(task_type: TaskType) -> Type[Task]:
         return OneWayTranslaitonTask
     else:
         raise ValueError("Unknown task type ", task_type)
+    

@@ -3,9 +3,8 @@ from typing import List, Tuple
 
 import pandas as pd
 from data_structures import TaskType, Language
-from exercise import LessonGenerator
+from exercise import SpacedRepetitionLessonGenerator
 from task_template import TaskTemplate
-from database_orm import DB
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,8 +13,6 @@ logging.basicConfig(
     encoding='utf-8', 
     level=logging.DEBUG
 )
-
-# Assume TaskTemplate class is defined as provided earlier
 
 def read_templates_from_json(file_path: str) -> List[TaskTemplate]:
     """
@@ -72,26 +69,31 @@ def write_template_json(template: TaskTemplate, file_path: str):
 
 # Example usage
 if __name__ == "__main__":
-    templates = read_templates_from_json("templates.json")
-    word_freq_output_file_path = "word_freq.txt"
-    word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
-    filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
-    list_of_tuples: List[Tuple[str, str, int]] = list(filtered_dataframe.to_records(index=False))
-    # convert numpy.int64 to Python integer
-    list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples]
-    DB.add_words_to_db(list_of_tuples)
+    # templates = read_templates_from_json("templates.json")
+    # word_freq_output_file_path = "word_freq.txt"
+    # word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
+    # filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
+    # list_of_tuples: List[Tuple[str, str, int]] = list(filtered_dataframe.to_records(index=False))
+    # # convert numpy.int64 to Python integer
+    # list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples]
+    # DB.add_words_to_db(list_of_tuples)
     
-    for template in templates:
-        added_task_template = DB.add_template(template)
+    # for template in templates:
+    #     added_task_template = DB.add_template(template)
     
-    # create user 
-    user_id = DB.insert_user("test_user")
-    logger.info("The user id is %s", user_id)
-    user_id = 1
+    # # create user 
+    # user_id = DB.insert_user("test_user")
+    # logger.info("The user id is %s", user_id)
+    # user_id = 1
 
-    lesson_generator = LessonGenerator(user_id)
+    lesson_generator = SpacedRepetitionLessonGenerator(1)
     lesson = lesson_generator.generate_lesson()
     # create a test for lesson iteration
     lesson.perform_lesson()
 
+    # # second lesson    
+    # lesson_generator = SpacedRepetitionLessonGenerator(user_id)
+    # lesson = lesson_generator.generate_lesson()
+    # # create a test for lesson iteration
+    # lesson.perform_lesson()
 

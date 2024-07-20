@@ -8,7 +8,7 @@ MAX_USER_NAME_LENGTH = 20
 MAX_SCORE = 10
 MIN_SCORE = 0
 EXERCISE_THRESHOLD = MAX_SCORE/2
-NUM_WORDS_PER_LESSON = 4
+NUM_WORDS_PER_LESSON = 2
 NUM_NEW_WORDS_PER_LESSON = floor(NUM_WORDS_PER_LESSON/3)
 
 class FourChoiceAnswer(Enum):
@@ -21,6 +21,7 @@ class CorrectionStrategy(Enum):
     HintStrategy = "HintStrategy"
     ExplanationStrategy = "ExplanationStrategy"
     EquivalentTaskStrategy = "EquivalentTaskStrategy"
+    NoStrategy = "NoStrategy" # TODO add logic for no strategy and random or undefined strategy
 
 @unique
 class Language(Enum):
@@ -66,7 +67,15 @@ class LexicalItem():
     
     def __str__(self):
         return f"LexicalItem(item='{self.item}', pos='{self.pos}', freq={self.freq}, id={self.id})"
-
+    
+    def to_json(self):
+        return {
+            'item': self.item,
+            'pos': self.pos,
+            'freq': self.freq,
+            'id': self.id
+        }
+    
 @dataclass
 class Resource():
     resource_id: int

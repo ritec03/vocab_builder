@@ -1,9 +1,12 @@
 from data_structures import TaskType
+from database_orm import DatabaseManager
 from task_template import TaskTemplate
 import random  # Import for random selection
-from database_orm import DB
 
 class TemplateRetriever():
+    def __init__(self, db_manager: DatabaseManager):
+        self.db_manager = db_manager
+
     def get_random_template_for_task_type(self, task_type: TaskType) -> TaskTemplate:
         """
         Provide a random template that adheres to the specified task type.
@@ -20,7 +23,7 @@ class TemplateRetriever():
         if not isinstance(task_type, TaskType):
             raise ValueError("No such task type exists.")
         
-        templates = DB.get_templates_by_task_type(task_type)  # Retrieve templates by task type
+        templates = self.db_manager.get_templates_by_task_type(task_type)  # Retrieve templates by task type
 
         if not templates:
             raise ValueError("No templates available for the given task type. ", task_type.name)
