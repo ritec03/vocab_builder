@@ -7,7 +7,7 @@ import axios from 'axios';
 import TaskCard from '../../../ui/components/TaskCard';
 import ScoreCard from '../../../ui/components/ScoreCard';
 import Header from '../../../ui/components/Header';
-import { Task } from '@/app/lib/definitions';
+import { LexicalItem, Score, Task } from '@/app/lib/definitions';
 
 interface LessonHead {
     lesson_id: number;
@@ -18,11 +18,12 @@ interface LessonHead {
 }
 
 interface SubmitTaskResponse {
-    score: Record<number, number>[]
+    score: Score[];
     next_task: {
         order: [number, number]
         task: Task
-    } | null 
+    } | null ;
+    final_score?: Score[];
 }
 
 const LessonPage: React.FC = () => {
@@ -31,7 +32,7 @@ const LessonPage: React.FC = () => {
     const router = useRouter();
     const [lesson, setLesson] = useState<LessonHead | null>(null);
     const [currentTask, setCurrentTask] = useState<{task: Task, order: [number,number]} | null>(null);
-    const [score, setScore] = useState<any>(null);
+    const [score, setScore] = useState<Score[] | null>(null);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(true);
     const [checking, setChecking] = useState(false);
@@ -61,8 +62,8 @@ const LessonPage: React.FC = () => {
                     task_order: currentTask.order,
                     answer
                 });
-                setScore(response.data.score);
                 setCurrentTask(response.data.next_task ? response.data.next_task : null);
+                setScore(response.data.score);
                 setChecking(false);
             } catch (error) {
                 setError('Failed to submit task.');
@@ -72,6 +73,7 @@ const LessonPage: React.FC = () => {
     };
 
     const handleFinishLesson = () => {
+        //  TODO handle finishing lesson early through the button or closing window or routing.
         router.push(`/user/${userId}`);
     };
 
@@ -88,7 +90,7 @@ const LessonPage: React.FC = () => {
             ) : checking ? (
                 <p>Checking your answer...</p>
             ) : score ? (
-                <ScoreCard score={score} onContinue={handleContinue} onFinishLesson={handleFinishLesson} />
+                <ScoreCard hasNextTask={currentTask !== null} score={score} onContinue={handleContinue} onFinishLesson={handleFinishLesson} />
             ) : currentTask ? (
                 <TaskCard task={currentTask.task} onSubmit={handleTaskSubmit} />
             ) : (
@@ -107,7 +109,3 @@ const LessonPage: React.FC = () => {
 };
 
 export default LessonPage;
-
-
-// TODOs
-// # save generated tasks to a file for db prepopulation

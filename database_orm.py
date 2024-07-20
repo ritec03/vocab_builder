@@ -1577,7 +1577,7 @@ class DatabaseManager:
             logger.error(e)
             raise e
         
-    def finish_lesson(self, user_id: int, lesson_id: int) -> Set[Score]:
+    def finish_lesson(self, user_id: int, lesson_id: int) -> List[Dict[str, Union[LexicalItem, int]]]:
         """
         Checks that the lesson belongs to the right user, has no uncompleted tasks, 
         then marks the lesson as completed
@@ -1590,7 +1590,7 @@ class DatabaseManager:
             lesson_id (int): The ID of the lesson to be marked as finished.
 
         Returns:
-            Set[Score]: A set of final scores calculated for the lesson.
+            List[Dict[str, Union[LexicalItem, int]]]: A list of dictionaries containing lexical item and score.
         """
         session = self.Session()
         try:
@@ -1616,19 +1616,43 @@ class DatabaseManager:
             evaluations = self.get_most_recent_lesson_data(user_id)
 
             # Calculate final scores for the lesson
-            final_scores = set()
+            final_scores: Set[Score] = set()
             # NOTE for now use default by saving the latest score for each evaluation
             for evaluation in evaluations:
                 final_scores.update(evaluation.get_final_scores_latest())
 
             self.update_user_scores(user_id, final_scores, lesson_id)
 
-            return final_scores
+            # Create a list of dictionaries containing lexical item and score
+            result = self.convert_scores(final_scores)
+
+            return result
 
         except Exception as e:
             session.rollback()
             logger.error(f"Failed to finish lesson: {str(e)}")
             raise Exception(f"Failed to finish lesson: {str(e)}")
+        
+    def convert_scores(self, scores: Set[Score]) -> List[Dict[str, Union[LexicalItem, int]]]:
+        """
+        Converts a set of scores into a list of dictionaries containing the corresponding lexical item and score.
+
+        Args:
+            scores (Set[Score]): A set of Score objects representing the scores.
+
+        Returns:
+            List[Dict[str, Union[LexicalItem, int]]]: A list of dictionaries, where 
+            each dictionary contains the lexical item and score.
+
+        """
+        result = []
+        for score in scores:
+            lexicalitem = self.get_word_by_id(score.word_id)  # Retrieve lexical item by ID
+            result.append({
+                "word": lexicalitem,
+                "score": score.score
+            })
+        return result
 
     def retrieve_words_for_lesson(
         self, user_id: int, word_num: int

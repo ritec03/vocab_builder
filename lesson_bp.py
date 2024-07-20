@@ -84,7 +84,7 @@ def submit_answer(user_id: int, lesson_id: int):
 
         Response structure:
         {
-            "score": List[Dict[int, int]],
+            "score": List[Dict[str, Union[LexicalItem, int]]],
             "next_task": {
                 "order": Tuple[int, int],
                 "task": json task representation
@@ -92,9 +92,9 @@ def submit_answer(user_id: int, lesson_id: int):
         }
         OR if the lesson is completed
         {
-            "score": List[Dict[int, int]],
+            "score": List[Dict[str, Union[LexicalItem, int]]],
             "next_task": None}
-            "final_scores": List[Score]
+            "final_scores": List[Dict[str, Union[LexicalItem, int]]]
         }
     """
     # TODO implement behaviour for unfinished or interrupted lessons.
@@ -122,11 +122,15 @@ def submit_answer(user_id: int, lesson_id: int):
         except:
             return jsonify({"error": "Failed to retrieve the next task."}), 500
         
+        task_score = db_manager.convert_scores(history_entry.evaluation_result)
+        task_score = list(map(lambda score_dict: {"word": score_dict["word"].to_json(), "score": score_dict["score"]}, task_score))
+            
         if not next_task:
             final_scores = db_manager.finish_lesson(user_id, lesson_id)
-            return jsonify({"score": list(history_entry.evaluation_result), "next_task": None, "final_scores": list(final_scores)}), 201
+            final_scores = list(map(lambda score_dict: {"word": score_dict["word"].to_json(), "score": score_dict["score"]}, final_scores))
+            return jsonify({"score": task_score, "next_task": None, "final_scores": list(final_scores)}), 201
         else:
-            return jsonify({"score": list(history_entry.evaluation_result), "next_task": {
+            return jsonify({"score": task_score, "next_task": {
                 "order": next_task["order"],
                 "task": next_task["task"].to_json(),
             }}), 201

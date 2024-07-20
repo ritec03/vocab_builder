@@ -20,10 +20,17 @@ export interface Task {
             freq: number;
         }[];
     }>;
-    learning_items: {
-        id: number;
-        item: string;
-        pos: string;
-        freq: number;
-    }[];
+    learning_items: LexicalItem[];
+}
+
+export interface LexicalItem {
+    id: number;
+    item: string;
+    pos: string;
+    freq: number;
+}
+
+export interface Score {
+    word: LexicalItem;
+    score: number;
 }
