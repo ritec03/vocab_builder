@@ -1,18 +1,16 @@
 import json
 from typing import List
 import unittest
-from flask import Flask
 import pandas as pd
 from sqlalchemy import Tuple
 from app_factory import create_app
-from data_structures import NUM_WORDS_PER_LESSON
+from data_structures import TASKS_FILE_DIRECTORY, TEMPLATED_FILE_DIRECTORY
 from database_orm import DatabaseManager, read_tasks_from_json, read_templates_from_json
-from exercise import SpacedRepetitionLessonGenerator
 
 class UserBlueprintTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        templates = read_templates_from_json("templates.json")
+        templates = read_templates_from_json(TEMPLATED_FILE_DIRECTORY)
         word_freq_output_file_path = "word_freq.txt"
         word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
         filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
@@ -88,13 +86,13 @@ class LessonBlueprintTestCase(unittest.TestCase):
 
     def prepopulate_db(self, db_manager: DatabaseManager):
         # add template and create template dict
-        templates = read_templates_from_json("templates.json")
+        templates = read_templates_from_json(TEMPLATED_FILE_DIRECTORY)
         template_dict = dict()
         for template in templates:
             added_template_id = db_manager.add_template(template)
             template_dict[template.get_template_string()] = added_template_id
         db_manager.add_words_to_db(self.list_of_tuples)
-        tasks = read_tasks_from_json("tasks.json")
+        tasks = read_tasks_from_json(TASKS_FILE_DIRECTORY)
         for task in tasks:
             task.template.id = template_dict[task.template.get_template_string()]
             for key in task.resources.keys():

@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import json
 import random
 from typing import Dict, List, Optional, Set, Tuple
-from data_structures import LexicalItem, TaskType
+from data_structures import TASKS_FILE_DIRECTORY, LexicalItem, TaskType
 from database_orm import DatabaseManager
 from llm_chains import invoke_task_generation_chain
 from task import Task
@@ -144,13 +144,13 @@ class AITaskGenerator(TaskGenerator):
         # TODO ignore IDs
         try:
             try:
-                with open('tasks.json', 'r') as f:
+                with open(TASKS_FILE_DIRECTORY, 'r') as f:
                     existing_tasks = json.load(f)
             except:
                 existing_tasks = []
 
             existing_tasks.append(task.to_json())
-            with open('tasks.json', 'w') as f:
+            with open(TASKS_FILE_DIRECTORY, 'w') as f:
                 json.dump(existing_tasks, f, indent=4)
         except Exception as e:
             logger.warning("Failed to save generated tasks due to this error", e)

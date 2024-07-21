@@ -1,8 +1,6 @@
-from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
 from langchain_core.pydantic_v1 import BaseModel, Field, validator
 from string import Template
-from dataclasses import dataclass
 from data_structures import FourChoiceAnswer, Resource, TaskType, Language
 
 class TaskTemplate():

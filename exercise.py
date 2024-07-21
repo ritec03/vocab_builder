@@ -7,7 +7,6 @@ from database_orm import DatabaseManager, ValueDoesNotExistInDB
 from evaluation import Evaluation, HistoryEntry
 from task import Task
 from task_generator import TaskFactory
-from itertools import chain
 import logging
 
 logger = logging.getLogger(__name__)

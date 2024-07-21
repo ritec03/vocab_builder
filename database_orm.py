@@ -5,7 +5,6 @@ from sqlalchemy import (
     and_,
     func,
     create_engine,
-    over,
     select,
     event,
 )
@@ -14,6 +13,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from data_structures import (
     MAX_USER_NAME_LENGTH,
+    TASKS_FILE_DIRECTORY,
+    TEMPLATED_FILE_DIRECTORY,
     CorrectionStrategy,
     Language,
     LexicalItem,
@@ -21,7 +22,6 @@ from data_structures import (
     Score,
     TaskType,
     MAX_SCORE,
-    MAX_USER_NAME_LENGTH,
     MIN_SCORE,
     User,
     UserScore,
@@ -129,7 +129,7 @@ def read_tasks_from_json(file_path: str) -> List[Task]:
         with open(file_path, 'r') as file:
             data = json.load(file)
     except:
-        logger.warning("Could not load tasks.json file.")
+        logger.warning(f"Could not load {TASKS_FILE_DIRECTORY} file.")
         return []
     
     tasks: List[Task] = []
@@ -192,12 +192,12 @@ class DatabaseManager:
 
     def prepopulate_db(self):
         # add template and create template dict
-        templates = read_templates_from_json("templates.json")
+        templates = read_templates_from_json(TEMPLATED_FILE_DIRECTORY)
         template_dict = dict()
         for template in templates:
             added_template_id = self.add_template(template)
             template_dict[template.get_template_string()] = added_template_id
-        tasks = read_tasks_from_json("tasks.json")
+        tasks = read_tasks_from_json(TASKS_FILE_DIRECTORY)
         for task in tasks:
             task.template.id = template_dict[task.template.get_template_string()]
             for key in task.resources.keys():

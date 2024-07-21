@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
-from enum import Enum
-from typing import List, Set, Dict, Type
-import copy
-from data_structures import EXERCISE_THRESHOLD, FourChoiceAnswer, LexicalItem, Score, TaskType
+from typing import Set, Dict, Type
+from data_structures import FourChoiceAnswer, LexicalItem, Score, TaskType
 from evaluation_method import AIEvaluation, EvaluationMethod
 from task_template import Resource, TaskTemplate
 import logging

@@ -1,8 +1,7 @@
-import json
 import logging
 from flask import Blueprint, request, jsonify, current_app
 
-from database_orm import DatabaseManager, ValueDoesNotExistInDB
+from database_orm import DatabaseManager
 from exercise import LessonTask, SpacedRepetitionLessonGenerator
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ def request_lesson(user_id: int):
 
     """
     try:
-        db_manager: DatabaseManager = current_app.db_manager
+        db_manager: DatabaseManager = current_app.db_manager # type: ignore
         user = db_manager.get_user_by_id(user_id)
         if not user:
             return jsonify({"error": f"User with user id {user_id} does not exist."}), 404
