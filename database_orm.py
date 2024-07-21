@@ -1,5 +1,5 @@
 import json
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, TypedDict, Union
 import pandas as pd
 from sqlalchemy import (
     and_,
@@ -24,6 +24,7 @@ from data_structures import (
     MAX_USER_NAME_LENGTH,
     MIN_SCORE,
     User,
+    UserScore,
 )
 
 from database_objects import (
@@ -53,6 +54,18 @@ from flask import Flask
 import logging
 
 logger = logging.getLogger(__name__)
+
+class NextTask(TypedDict):
+    order: Tuple[int, int]
+    task: Task
+    eval: None
+    error_correction: Union[CorrectionStrategy, None]
+
+class NongeneratedNextTask(TypedDict):
+    order: Tuple[int, int]
+    task: None
+    eval: Evaluation
+    error_correction: CorrectionStrategy 
 
 class ValueDoesNotExistInDB(LookupError):
     """
@@ -443,7 +456,7 @@ class DatabaseManager:
             logger.error(e)
             raise e
 
-    def get_latest_word_score_for_user(self, user_id: int) -> Dict[int, Dict]:
+    def get_latest_word_score_for_user(self, user_id: int) -> Dict[int, UserScore]:
         """
         Retrieves word score data of a user from the learning_data table
         and returns them as a dictionary with keys of word ids and values as dictionaries of scores and timestamps.
@@ -451,7 +464,7 @@ class DatabaseManager:
         Raises ValueDoesNotExistInDB error if non-existent user is requested.
         
         Returns:
-            Dict[int word_id, {"score": Score, "timestamp": timestamp}]
+            Dict[int word_id, UserScore]
         """
         # TODO check for efficiency
         # TODO add more tests to check returning words
@@ -988,11 +1001,11 @@ class DatabaseManager:
             # Create a subquery for use in the main query
             task_ids_subquery = task_ids_with_all_words.subquery()
 
-            # BUG SAWarning: Coercing Subquery object into a select() for use in IN(); please pass a select() construct explicitly
+            # NOTE SAWarning: Coercing Subquery object into a select() for use in IN(); please pass a select() construct explicitly
             # Now query for tasks where task IDs are in the above subquery results
             tasks_query = (
                 select(TaskDBObj)
-                .where(TaskDBObj.id.in_(task_ids_subquery))
+                .where(TaskDBObj.id.in_(select(task_ids_subquery)))
                 .limit(number)
             )
 
@@ -1354,7 +1367,7 @@ class DatabaseManager:
             self,
             user_id: int, 
             lesson_id: int
-        ) -> Optional[Dict[str, Union[None, CorrectionStrategy, Task, Evaluation, Tuple[int,int]]]]:
+        ) -> Union[None, NextTask, NongeneratedNextTask]:
         """
         Get the next task in the lesson for the user, if the task is defined. If
         the next task is not defined in the the lesson plan (the case for a retry according
@@ -1363,14 +1376,9 @@ class DatabaseManager:
 
         If there are no more tasks, marks the lesson as completed.
 
-        Returns a dictionary of form:
-            {
-                "order" : (int,int)
-                "task" : Task or None
-                "eval" : Evaluation or None
-                "error_correction": CorrectionStrategy | None - strategy according 
-                    to which this task is chosen
-            }
+        Returns
+            NextTask
+            NongeneratedNextTask
             None if there are no more tasks in the lesson to be completed.
         """
         # NOTE ERROR:database_orm:Couldn't get next task for lesson: The unique() method must be invoked on this Result, as it contains results that include joined eager loads against collections
@@ -1395,8 +1403,12 @@ class DatabaseManager:
             for task_obj in sorted(lesson.lesson_plan.tasks, key=lambda x: (x.sequence_num, x.attempt_num)):
                 if not task_obj.completed:
                     # Check if it needs correction handling
+                    # TODO make it clearer when error correction is defined in the table and not
+                    # NOTE only error correction task is not defined in the database, so it must have an eval
                     if task_obj.error_correction and task_obj.error_correction != CorrectionStrategy.NoStrategy:
                         evaluation = self.get_evaluation_for_task(user_id, lesson_id, (task_obj.sequence_num, task_obj.attempt_num))
+                        if not evaluation:
+                            raise ValueDoesNotExistInDB("Evaluation for nongenerated error correction task is missing.")
                         return {
                             "order": (task_obj.sequence_num, task_obj.attempt_num),
                             "task": None,
@@ -1614,6 +1626,8 @@ class DatabaseManager:
 
             # Retrieve all evaluations for the lesson
             evaluations = self.get_most_recent_lesson_data(user_id)
+            if not evaluations:
+                raise ValueDoesNotExistInDB("No completed lesson was found for the user.")
 
             # Calculate final scores for the lesson
             final_scores: Set[Score] = set()

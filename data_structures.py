@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, unique
-from typing import Optional, Set
+from typing import Optional, Set, TypedDict
 from math import floor
 
 MAX_USER_NAME_LENGTH = 20
@@ -81,6 +81,10 @@ class Resource():
     resource_id: int
     resource: str
     target_words: Set[LexicalItem]
+
+class UserScore(TypedDict):
+    score: Score
+    timestamp: datetime
     
 @dataclass
 class TimePeriodCriterion:
