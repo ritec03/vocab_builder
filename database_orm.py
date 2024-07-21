@@ -1155,7 +1155,7 @@ class DatabaseManager:
 
             # Create and add the new history entry
             new_history_entry = HistoryEntrieDBObj(
-                sequence_number=lesson_task_obj.attempt_num,
+                attempt=lesson_task_obj.attempt_num,
                 task_id=task_obj.id,
                 response=history_entry.response
             )
@@ -1340,7 +1340,7 @@ class DatabaseManager:
         adding the evaluations list in order into evaluations table, and saving each history entry
         into the history entries in order, with received scores going to entry_scores table
         Raises ValueDoesNotExistInDB if user does not exist.
-        TODO Returns lesson id.
+        Returns lesson id.
         """
         with managed_session(self.Session) as session:
             if not session.get(UserDBObj, user_id):
@@ -1356,7 +1356,7 @@ class DatabaseManager:
                     evaluation.history, start=1
                 ):
                     new_history_entry = HistoryEntrieDBObj(
-                        sequence_number=history_index,
+                        attempt=history_index,
                         task_id=history_entry.task.id,
                         response=history_entry.response,
                     )
