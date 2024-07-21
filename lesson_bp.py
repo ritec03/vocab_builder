@@ -19,9 +19,9 @@ def request_lesson(user_id: int):
         A JSON response containing the lesson information and the first task:
         {
             "lesson_id": int,
-            "task": {
+            "first_task": {
                 "order": Tuple[int, int],
-                "first_task": json representation of a task
+                "task": json representation of a task
             }
         }
 
@@ -38,11 +38,11 @@ def request_lesson(user_id: int):
 
         lesson_head = db_manager.retrieve_lesson(user_id)
         if lesson_head:
-            task = lesson_head["task"]["first_task"]
+            task = lesson_head["first_task"]["task"]
             if not task:
                 logger.warning("Task is empty.")
-            lesson_head["task"]["first_task"] = task.to_json()
-            if not lesson_head["task"]["first_task"]:
+            lesson_head["first_task"]["task"] = task.to_json()
+            if not lesson_head["first_task"]["task"]:
                 logger.warning("Task is empty after converting to dict.")
             return jsonify(lesson_head), 201
         else:
@@ -57,11 +57,11 @@ def request_lesson(user_id: int):
             except:
                 logger.error(f"Failed to save lesson. Error: {str(e)}")
                 return jsonify({"error": "Failed to save the lesson."}), 500
-            task = gen_lesson_head["task"]["first_task"]
+            task = gen_lesson_head["first_task"]["task"]
             if not task:
                 logger.warning("Task is empty.")
-            gen_lesson_head["task"]["first_task"] = task.to_json()
-            if not gen_lesson_head["task"]["first_task"]:
+            gen_lesson_head["first_task"]["task"] = task.to_json()
+            if not gen_lesson_head["first_task"]["task"]:
                 logger.warning("Task is empty after converting to dict.")
             return jsonify(gen_lesson_head), 201
     except Exception as e:

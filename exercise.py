@@ -3,17 +3,13 @@ from datetime import datetime
 from math import floor
 from typing import Dict, List, Optional, Set, Tuple, Type, TypedDict, Union
 from data_structures import EXERCISE_THRESHOLD, NUM_WORDS_PER_LESSON, CorrectionStrategy, LexicalItem, Score, UserScore
-from database_orm import DatabaseManager, ValueDoesNotExistInDB
+from database_orm import DatabaseManager, OrderedTask, ValueDoesNotExistInDB
 from evaluation import Evaluation, HistoryEntry
 from task import Task
 from task_generator import TaskFactory
 import logging
 
 logger = logging.getLogger(__name__)
-
-class OrderedTask(TypedDict):
-    order: Tuple[int, int]
-    task: Task
 
 class ErrorCorrectionStrategy(ABC):
     def __init__(self, db_manager: DatabaseManager):

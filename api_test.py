@@ -112,9 +112,9 @@ class LessonBlueprintTestCase(unittest.TestCase):
         res = self.client.post(f'/users/{self.user_id}/lessons')
         self.assertEqual(res.status_code, 201)
         self.assertIn('lesson_id', res.get_json())
-        self.assertIn('task', res.get_json())
-        self.assertIn('order', res.get_json()["task"])
-        self.assertIn('first_task', res.get_json()["task"])
+        self.assertIn('first_task', res.get_json())
+        self.assertIn('order', res.get_json()["first_task"])
+        self.assertIn('task', res.get_json()["first_task"])
 
     # TODO think about the random nature of the tests here.
     def test_submit_answer(self):
@@ -122,8 +122,8 @@ class LessonBlueprintTestCase(unittest.TestCase):
         data = res.get_json()
 
         request_data = {
-            "task_id": data["task"]["first_task"]["id"],
-            "task_order": data["task"]["order"],
+            "task_id": data["first_task"]["task"]["id"],
+            "task_order": data["first_task"]["order"],
             "answer": "B"
         }
 
@@ -140,7 +140,7 @@ class LessonBlueprintTestCase(unittest.TestCase):
         self.assertIn("score", response_data)
         self.assertIn("next_task", response_data)
         # TODO convert order to a list from tuple?
-        self.assertEquals(response_data["next_task"]["order"], [data["task"]["order"][0]+1, data["task"]["order"][1]])
+        self.assertEquals(response_data["next_task"]["order"], [data["first_task"]["order"][0]+1, data["first_task"]["order"][1]])
 
     def test_finish_lesson(self):
         # NOTE for this test for now set NUM_WORDS_PER_LESSON to 2 manually
@@ -151,8 +151,8 @@ class LessonBlueprintTestCase(unittest.TestCase):
 
         # submit the task 
         request_data = {
-            "task_id": data["task"]["first_task"]["id"],
-            "task_order": data["task"]["order"],
+            "task_id": data["first_task"]["task"]["id"],
+            "task_order": data["first_task"]["order"],
             "answer": "B"
         }
 

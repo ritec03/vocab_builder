@@ -56,17 +56,27 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class NextTask(TypedDict):
+class OrderedTask(TypedDict):
     order: Tuple[int, int]
     task: Task
-    eval: None
-    error_correction: Union[CorrectionStrategy, None]
 
-class NongeneratedNextTask(TypedDict):
+class NextTask(OrderedTask):
+    eval: None
+    error_correction: Optional[CorrectionStrategy]
+
+class NongeneratedNextTask(OrderedTask):
     order: Tuple[int, int]
     task: None
     eval: Evaluation
     error_correction: CorrectionStrategy 
+
+class LessonHead(TypedDict):
+    lesson_id: int
+    first_task: OrderedTask
+
+class ExpandedScore(TypedDict):
+    word: LexicalItem
+    score: int
 
 class ValueDoesNotExistInDB(LookupError):
     """
@@ -939,7 +949,7 @@ class DatabaseManager:
     METHODS FOR WORKING WITH LESSONS
     """
 
-    def retrieve_lesson(self, user_id: int) -> Optional[Dict[str, Union[int, Dict[str, Union[Tuple[int, int], Task]]]]]:
+    def retrieve_lesson(self, user_id: int) -> Optional[LessonHead]:
         """
         Retrieves lesson_id and first task for a lesson if there is
         a new uncompleted lesson for the user. Otherwise, returns None.
@@ -949,14 +959,7 @@ class DatabaseManager:
 
         Assumes the user exists.
 
-        Returns:
-            {
-                "lesson_id": int
-                "task": {
-                    "order": (1,1)
-                    "first_task": Task
-                }
-            }
+        Returns: LessonHead or None
         """
         with managed_session(self.Session) as session:
             # Retrieve the uncompleted lessons for the user
@@ -996,9 +999,9 @@ class DatabaseManager:
             # Construct the response dictionary
             return {
                 "lesson_id": latest_lesson.id,
-                "task": {
+                "first_task": {
                     "order": (0,0),
-                    "first_task": task
+                    "task": task
                 }
             }
 
@@ -1006,7 +1009,7 @@ class DatabaseManager:
             self,
             user_id: int, 
             lesson_plan: List[Tuple[Task, List[Union[CorrectionStrategy, Task]]]]
-        ) -> Dict[str, Union[int, Dict[str, Union[Tuple[int,int], Task]]]]:
+        ) -> LessonHead:
         """
         Initializes a lesson and saves lesson plan for the lesson.
         Checks if a new lesson already exists for the user.
@@ -1015,14 +1018,7 @@ class DatabaseManager:
         Params:
             lesson_plan: a list of (Task, Tuple[values from CorrectionStrategyEnum, or Task])
             user_id : int
-        Returns:
-            {
-                "lesson_id": int
-                "task": {
-                    "order": (0,0)
-                    "first_task": Task
-                }
-            }
+        Returns: LessonHead
         """
         with managed_session(self.Session) as session:
             # Check if user exists
@@ -1081,9 +1077,9 @@ class DatabaseManager:
             # Return the first task and lesson_id
             return {
                 "lesson_id": new_lesson.id,
-                "task": {
+                "first_task": {
                     "order": (0,0),
-                    "first_task": lesson_plan[0][0]
+                    "task": lesson_plan[0][0]
                 }
             }
         
@@ -1425,7 +1421,7 @@ class DatabaseManager:
 
             return evaluations
         
-    def finish_lesson(self, user_id: int, lesson_id: int) -> List[Dict[str, Union[LexicalItem, int]]]:
+    def finish_lesson(self, user_id: int, lesson_id: int) -> List[ExpandedScore]:
         """
         Checks that the lesson belongs to the right user, has no uncompleted tasks, 
         then marks the lesson as completed
@@ -1438,7 +1434,7 @@ class DatabaseManager:
             lesson_id (int): The ID of the lesson to be marked as finished.
 
         Returns:
-            List[Dict[str, Union[LexicalItem, int]]]: A list of dictionaries containing lexical item and score.
+            List[ExpandedScore]: A list of dictionaries containing lexical item and score.
         """
         with managed_session(self.Session) as session:
             # Retrieve the lesson
@@ -1477,7 +1473,7 @@ class DatabaseManager:
 
             return result
         
-    def convert_scores(self, scores: Set[Score]) -> List[Dict[str, Union[LexicalItem, int]]]:
+    def convert_scores(self, scores: Set[Score]) -> List[ExpandedScore]:
         """
         Converts a set of scores into a list of dictionaries containing the corresponding lexical item and score.
 
