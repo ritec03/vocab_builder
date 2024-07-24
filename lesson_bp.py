@@ -1,7 +1,8 @@
+from dataclasses import asdict
 import logging
 from flask import Blueprint, request, jsonify, current_app
 
-from database_orm import DatabaseManager
+from database_orm import DatabaseManager, Order
 from exercise import LessonTask, SpacedRepetitionLessonGenerator
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,10 @@ def request_lesson(user_id: int):
         {
             "lesson_id": int,
             "first_task": {
-                "order": Tuple[int, int],
+                "order": {
+                    "sequence_num": int,
+                    "attempt": int
+                },
                 "task": json representation of a task
             }
         }
@@ -37,11 +41,14 @@ def request_lesson(user_id: int):
             return jsonify({"error": f"User with user id {user_id} does not exist."}), 404
 
         lesson_head = db_manager.retrieve_lesson(user_id)
+        logger.info(f"A lesson was successfully retrieved. The leason head is {lesson_head}")
         if lesson_head:
             task = lesson_head["first_task"]["task"]
             if not task:
                 logger.warning("Task is empty.")
             lesson_head["first_task"]["task"] = task.to_json()
+            lesson_head["first_task"]["order"] = asdict(lesson_head["first_task"]["order"])
+            logger.info(f"The lesson head is {lesson_head}")
             if not lesson_head["first_task"]["task"]:
                 logger.warning("Task is empty after converting to dict.")
             return jsonify(lesson_head), 201
@@ -49,6 +56,7 @@ def request_lesson(user_id: int):
             lesson_gen = SpacedRepetitionLessonGenerator(user_id, db_manager)
             try:
                 lesson_plan = lesson_gen.generate_lesson()
+                logger.info(f"Generated lesson: {lesson_plan}")
             except Exception as e:
                 logger.error(f"Failed to generate lesson. Error: {str(e)}")
                 return jsonify({"error": "Failed to generate lesson."}), 500
@@ -61,8 +69,10 @@ def request_lesson(user_id: int):
             if not task:
                 logger.warning("Task is empty.")
             gen_lesson_head["first_task"]["task"] = task.to_json()
+            gen_lesson_head["first_task"]["order"] = asdict(gen_lesson_head["first_task"]["order"])
             if not gen_lesson_head["first_task"]["task"]:
                 logger.warning("Task is empty after converting to dict.")
+            logger.info(f"Generated lesson head: {gen_lesson_head}")
             return jsonify(gen_lesson_head), 201
     except Exception as e:
         logger.error(f"General error occurred. Error: {str(e)}")
@@ -85,7 +95,10 @@ def submit_answer(user_id: int, lesson_id: int):
         {
             "score": List[Dict[str, Union[LexicalItem, int]]],
             "next_task": {
-                "order": Tuple[int, int],
+                "order": {
+                    "sequence_num": int,
+                    "attempt": int
+                },
                 "task": json task representation
             }
         }
@@ -113,7 +126,8 @@ def submit_answer(user_id: int, lesson_id: int):
 
         lesson_task = LessonTask(user_id, db_manager, lesson_id)
         try:
-            history_entry = lesson_task.evaluate_task(answer, task_id, order)
+            history_entry = lesson_task.evaluate_task(answer, task_id, Order(**order))
+            logger.info(f"Evaluated task. Result: {history_entry.evaluation_result}")
         except:
             return jsonify({"error": "Failed to evaluate task."}), 500
         try:
@@ -123,14 +137,15 @@ def submit_answer(user_id: int, lesson_id: int):
         
         task_score = db_manager.convert_scores(history_entry.evaluation_result)
         task_score = list(map(lambda score_dict: {"word": score_dict["word"].to_json(), "score": score_dict["score"]}, task_score))
-            
+        logger.info(f"Task score: {task_score}")
         if not next_task:
             final_scores = db_manager.finish_lesson(user_id, lesson_id)
             final_scores = list(map(lambda score_dict: {"word": score_dict["word"].to_json(), "score": score_dict["score"]}, final_scores))
+            logger.info(f"Final scores: {final_scores}")
             return jsonify({"score": task_score, "next_task": None, "final_scores": list(final_scores)}), 201
         else:
             return jsonify({"score": task_score, "next_task": {
-                "order": next_task["order"],
+                "order": asdict(next_task["order"]),
                 "task": next_task["task"].to_json(),
             }}), 201
     except Exception as e:

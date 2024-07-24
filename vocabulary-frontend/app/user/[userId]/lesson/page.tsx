@@ -9,20 +9,24 @@ import ScoreCard from '../../../ui/components/ScoreCard';
 import Header from '../../../ui/components/Header';
 import { LexicalItem, Score, Task } from '@/app/lib/definitions';
 
+interface Order {
+    sequence_num: number;
+    attempt: number;
+}
+
+interface OrderedTask {
+    order: Order;
+    task: Task;
+}
+
 interface LessonHead {
     lesson_id: number;
-    task: {
-        order: [number, number];
-        first_task: Task;
-    };
+    first_task: OrderedTask;
 }
 
 interface SubmitTaskResponse {
     score: Score[];
-    next_task: {
-        order: [number, number]
-        task: Task
-    } | null ;
+    next_task: OrderedTask | null ;
     final_score?: Score[];
 }
 
@@ -31,7 +35,7 @@ const LessonPage: React.FC = () => {
     const userId = params.userId as string;
     const router = useRouter();
     const [lesson, setLesson] = useState<LessonHead | null>(null);
-    const [currentTask, setCurrentTask] = useState<{task: Task, order: [number,number]} | null>(null);
+    const [currentTask, setCurrentTask] = useState<{task: Task, order: Order} | null>(null);
     const [score, setScore] = useState<Score[] | null>(null);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(true);
@@ -42,7 +46,7 @@ const LessonPage: React.FC = () => {
             try {
                 const response: {data: LessonHead} = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/lessons`);
                 setLesson(response.data);
-                setCurrentTask({task:response.data.task.first_task, order: response.data.task.order});
+                setCurrentTask({task:response.data.first_task.task, order: response.data.first_task.order});
                 setLoading(false);
             } catch (error) {
                 setError('Failed to fetch lesson.');

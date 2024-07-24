@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from dataclasses import dataclass
 import json
 from typing import Dict, List, Optional, Set, Tuple, TypedDict, Union
 import pandas as pd
@@ -56,8 +57,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class Order:
+    sequence_num: int
+    attempt: int
+
 class OrderedTask(TypedDict):
-    order: Tuple[int, int]
+    order: Order
     task: Task
 
 class NextTask(OrderedTask):
@@ -65,7 +71,7 @@ class NextTask(OrderedTask):
     error_correction: Optional[CorrectionStrategy]
 
 class NongeneratedNextTask(OrderedTask):
-    order: Tuple[int, int]
+    order: Order
     task: None
     eval: Evaluation
     error_correction: CorrectionStrategy 
@@ -239,7 +245,6 @@ class DatabaseManager:
 
     def add_words_to_db(self, word_list: List[Tuple[str, str, int]]) -> List[int]:
         """
-        # TODO change the return type to dict
         Insert tuples of (word, part-of-speech, frequency) into words table.
         If a combination of (word, pos) already exists in the database,
         only the freq count is updated.
@@ -981,6 +986,7 @@ class DatabaseManager:
                 return None
 
             latest_lesson = lessons[0]
+            logger.info(f"The latest uncompleted lesson with id {latest_lesson.id} was found.")
 
             first_task_id = None
             # Check if all tasks in the lesson are uncompleted
@@ -1000,7 +1006,7 @@ class DatabaseManager:
             return {
                 "lesson_id": latest_lesson.id,
                 "first_task": {
-                    "order": (0,0),
+                    "order": Order(0,0),
                     "task": task
                 }
             }
@@ -1078,7 +1084,7 @@ class DatabaseManager:
             return {
                 "lesson_id": new_lesson.id,
                 "first_task": {
-                    "order": (0,0),
+                    "order": Order(0, 0),
                     "task": lesson_plan[0][0]
                 }
             }
@@ -1087,7 +1093,7 @@ class DatabaseManager:
         self, 
         user_id: int, 
         lesson_id: int, 
-        order: Tuple[int,int],
+        order: Order,
         history_entry: HistoryEntry
     ):
         """
@@ -1096,7 +1102,7 @@ class DatabaseManager:
         Args:
             user_id (int): The ID of the user.
             lesson_id (int): The ID of the lesson.
-            order (Tuple[int,int]): The order of the task in the lesson plan (sequence number, attempt number).
+            order (Order): The order of the task in the lesson plan (sequence number, attempt number).
             history_entry (HistoryEntry): The history entry containing the evaluation data.
 
         Raises:
@@ -1123,8 +1129,8 @@ class DatabaseManager:
                 .options(joinedload(LessonPlanTaskDBObj.task))
                 .where(
                     LessonPlanTaskDBObj.lesson_plan_id == lesson.lesson_plan.id,
-                    LessonPlanTaskDBObj.sequence_num == order[0],
-                    LessonPlanTaskDBObj.attempt_num == order[1],
+                    LessonPlanTaskDBObj.sequence_num == order.sequence_num,
+                    LessonPlanTaskDBObj.attempt_num == order.attempt,
                     LessonPlanTaskDBObj.task_id == TaskDBObj.id
                 )
             )
@@ -1178,7 +1184,7 @@ class DatabaseManager:
             self,
             user_id: int,
             lesson_id: int,
-            order: Tuple[int, int]
+            order: Order
     ) -> Optional[Evaluation]:
         """
         Returns evaluation object for the task at sequence number order[0].
@@ -1201,7 +1207,7 @@ class DatabaseManager:
                 select(EvaluationDBObj).options(selectinload(EvaluationDBObj.history_entries))
                 .where(
                     EvaluationDBObj.lesson_id == lesson_id,
-                    EvaluationDBObj.sequence_number == order[0]
+                    EvaluationDBObj.sequence_number == order.sequence_num
                 )
             ).scalar_one_or_none()
 
@@ -1260,10 +1266,10 @@ class DatabaseManager:
                         if evaluation := self.get_evaluation_for_task(
                             user_id,
                             lesson_id,
-                            (task_obj.sequence_num, task_obj.attempt_num),
+                            Order(task_obj.sequence_num, task_obj.attempt_num),
                         ):
                             return {
-                                "order": (task_obj.sequence_num, task_obj.attempt_num),
+                                "order": Order(task_obj.sequence_num, task_obj.attempt_num),
                                 "task": None,
                                 "eval": evaluation,
                                 "error_correction": task_obj.error_correction
@@ -1274,7 +1280,7 @@ class DatabaseManager:
                     # Retrieve the Task associated with this lesson plan task
                     task = self.get_task_by_id(task_obj.task_id)
                     return {
-                        "order": (task_obj.sequence_num, task_obj.attempt_num),
+                        "order": Order(task_obj.sequence_num, task_obj.attempt_num),
                         "task": task,
                         "eval": None,
                         "error_correction": None
@@ -1290,7 +1296,7 @@ class DatabaseManager:
             user_id: int, 
             lesson_id: int, 
             task: Task,
-            order: Tuple[int, int]
+            order: Order
         ):
         """
         Updates the lesson plan with the task at the sequence num and attempt num.
@@ -1313,7 +1319,7 @@ class DatabaseManager:
             # Locate the task within the lesson plan
             task_obj = None
             for t in lesson.lesson_plan.tasks:
-                if t.sequence_num == order[0] and t.attempt_num == order[1]:
+                if t.sequence_num == order.sequence_num and t.attempt_num == order.attempt:
                     task_obj = t
                     break
             

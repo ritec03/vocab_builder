@@ -3,7 +3,7 @@ from datetime import datetime
 from math import floor
 from typing import Dict, List, Optional, Set, Tuple, Type, TypedDict, Union
 from data_structures import EXERCISE_THRESHOLD, NUM_WORDS_PER_LESSON, CorrectionStrategy, LexicalItem, Score, UserScore
-from database_orm import DatabaseManager, OrderedTask, ValueDoesNotExistInDB
+from database_orm import DatabaseManager, Order, OrderedTask, ValueDoesNotExistInDB
 from evaluation import Evaluation, HistoryEntry
 from task import Task
 from task_generator import TaskFactory
@@ -136,7 +136,7 @@ class LessonTask():
         self.db_manager = db_manager
         self.lesson_id = lesson_id
 
-    def evaluate_task(self, answer: str, task_id: int, order: Tuple[int, int]) -> HistoryEntry:
+    def evaluate_task(self, answer: str, task_id: int, order: Order) -> HistoryEntry:
         """
         Evaluates the task situated at the order within lesson plan
         according to its evaluation policy. Saves the evaluation for the task
@@ -162,7 +162,7 @@ class LessonTask():
         If the task is not yet defined, generates it and returns it.
         Returns:
             {
-                "order": Tuple[int, int]
+                "order": Order
                 "task": Task
             }
             None if there are no more tasks in the lesson.
@@ -177,7 +177,7 @@ class LessonTask():
             }
         elif next_task["eval"]:
             task_eval = next_task["eval"]
-            if next_task["order"][1] > 0:
+            if next_task["order"].attempt > 0:
                 correction_strategy = next_task["error_correction"]
                 # NOTE correction strategy is not none since it's NongeneratedNextTask
                 strategy_obj = get_strategy_object(correction_strategy)(self.db_manager) # type: ignore
@@ -247,7 +247,6 @@ class ExerciseSequence:
         Records user response for the task, runs evaluations and appends evaluation
         to the evaluation object.
         """
-        # TODO change it to adapt for web app
         user_response = input(task.produce_task())
         evaluation_result = task.evaluate_user_input(user_response)
         evaluation.add_entry(task, user_response, evaluation_result)
@@ -405,6 +404,7 @@ class SpacedRepetitionLessonGenerator():
         """
         Returns the first tuple of the lesson plan.
         """
+        logger.info("Generating lesson plan.")
         user_word_scores = self.db_manager.get_latest_word_score_for_user(self.user_id)
         logger.info(f"The latest word scores for the user are {user_word_scores}")
         # choose target words
