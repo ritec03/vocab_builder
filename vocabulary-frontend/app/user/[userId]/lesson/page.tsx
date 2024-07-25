@@ -78,7 +78,7 @@ const LessonPage: React.FC = () => {
         onSuccess: (data: SubmitTaskResponse) => {
             setScore(data.score);
             setCurrentTask(data.next_task || null);
-        }
+        },
     });        
         
     const handleTaskSubmit = async (answer: string) => {

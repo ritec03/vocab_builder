@@ -140,7 +140,7 @@ class LessonBlueprintTestCase(unittest.TestCase):
         self.assertIn("score", response_data)
         self.assertIn("next_task", response_data)
         # TODO convert order to a list from tuple?
-        self.assertEquals(response_data["next_task"]["order"], {"sequence_num": data["first_task"]["order"]["sequence_num"]+1, "attempt": data["first_task"]["order"]["attempt"]})
+        self.assertEqual(response_data["next_task"]["order"], {"sequence_num": data["first_task"]["order"]["sequence_num"]+1, "attempt": data["first_task"]["order"]["attempt"]})
 
     def test_finish_lesson(self):
         # NOTE for this test for now set NUM_WORDS_PER_LESSON to 2 manually
