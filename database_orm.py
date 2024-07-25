@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import json
+import os
 from typing import Any, Dict, List, Optional, Set, Tuple, TypedDict, Union
 import pandas as pd
 from sqlalchemy import (
@@ -14,6 +15,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session, selectinload, joinedloa
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from data_structures import (
+    FULL_DATABASE_PATH,
     MAX_USER_NAME_LENGTH,
     TASKS_FILE_DIRECTORY,
     TEMPLATED_FILE_DIRECTORY,
@@ -203,26 +205,24 @@ class DatabaseManager:
     def __init__(self, app: Optional[Flask]):
         if app: 
             self.init_app(app)
-        else:
-            engine = create_engine('sqlite:///database.db', echo=False)
-            Base.metadata.create_all(engine)
-            self.Session = scoped_session(sessionmaker(bind=engine))
-
-            word_freq_output_file_path = "word_freq.txt"
-            word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
-            filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
-            list_of_tuples: List[Tuple[str, str, int]] = list(filtered_dataframe.to_records(index=False))
-            # convert numpy.int64 to Python integer
-            list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples][:100]
-            
-            indices = self.add_words_to_db(list_of_tuples)
-
+        elif not os.path.exists(FULL_DATABASE_PATH):
             self.prepopulate_db()
             
-            logger.info(indices)
-            self.shutdown_session()
-
     def prepopulate_db(self):
+        engine = create_engine(f'sqlite:///{(FULL_DATABASE_PATH)}', echo=False)
+        Base.metadata.create_all(engine)
+        self.Session = scoped_session(sessionmaker(bind=engine))
+
+        word_freq_output_file_path = "word_freq.txt"
+        word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
+        filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
+        list_of_tuples: List[Tuple[str, str, int]] = list(filtered_dataframe.to_records(index=False))
+        # convert numpy.int64 to Python integer
+        list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples][:100]
+        
+        indices = self.add_words_to_db(list_of_tuples)
+        logger.info(indices)
+
         # add template and create template dict
         templates = read_templates_from_json(TEMPLATED_FILE_DIRECTORY)
         template_dict = {}
@@ -235,6 +235,8 @@ class DatabaseManager:
             for key in task.resources.keys():
                 self.add_resource_manual(task.resources[key].resource, task.resources[key].target_words)
             self.add_task(task.template.id, task.resources, task.learning_items, task.correctAnswer)
+            
+        self.shutdown_session()
 
     def init_app(self, app: Flask):
         engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], echo=False)

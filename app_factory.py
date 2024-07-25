@@ -1,6 +1,8 @@
+import contextlib
 import logging
 import os
 from flask import Flask
+from data_structures import DATABASE_FILE, FLASK_INSTANCE_FOLDER, FULL_DATABASE_PATH
 from database_orm import DatabaseManager
 from user_bp import users_bp
 from lesson_bp import lessons_bp
@@ -15,9 +17,9 @@ logging.basicConfig(
 
 def create_app(test_config=None):
     # create and configure the app
-    app = Flask(__name__, instance_relative_config=True)
+    app = Flask(__name__, instance_relative_config=True, instance_path=FLASK_INSTANCE_FOLDER)
     app.config.from_mapping(
-        SQLALCHEMY_DATABASE_URI='sqlite:///database.db',
+        SQLALCHEMY_DATABASE_URI=F'sqlite:///{FULL_DATABASE_PATH}',
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
     )
 
@@ -29,11 +31,8 @@ def create_app(test_config=None):
         app.config.from_mapping(test_config)
 
     # ensure the instance folder exists
-    try:
+    with contextlib.suppress(OSError):
         os.makedirs(app.instance_path)
-    except OSError:
-        pass
-
     app.db_manager = DatabaseManager(app)
     app.register_blueprint(users_bp)
     app.register_blueprint(lessons_bp)

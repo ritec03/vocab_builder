@@ -1,8 +1,7 @@
 import json
 import random
 from typing import Dict, Set
-from data_structures import LexicalItem
-from secret import OPEN_AI_KEY
+from data_structures import OPEN_AI_KEY, LexicalItem
 from langchain.prompts import PromptTemplate
 from langchain_community.chat_models import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
