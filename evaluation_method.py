@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from data_structures import MAX_SCORE, MIN_SCORE, LexicalItem, Score
 from llm_chains import invoke_evaluation_chain
-from typing import Dict, Set, List
+from typing import Dict, Optional, Set, List
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,11 +12,11 @@ class EvaluationMethod(ABC):
     It operates with gold standard answer, user answer and a context (such as task).
     Context is defined by a class that uses the evaluation (such as by a concrete task class).
     """
-    def __init__(self, context: Dict[str, str] = None):
+    def __init__(self, context: Optional[Dict[str, str]] = None):
         self.context = context
 
     @abstractmethod
-    def evaluate(self, gold_standard:str, user_answer: str, target_words: Set[LexicalItem]) -> List[Score]:
+    def evaluate(self, gold_standard:str, user_answer: str, target_words: Set[LexicalItem]) -> Set[Score]:
         """
         Method that evaluates user answer against the gold standard with
         consideration of the context.

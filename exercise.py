@@ -1,13 +1,12 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from math import floor
-from typing import Dict, List, Optional, Set, Tuple, Type, Union
-from data_structures import EXERCISE_THRESHOLD, NUM_WORDS_PER_LESSON, CorrectionStrategy, LexicalItem, Score
-from database_orm import DatabaseManager
+from typing import Dict, List, Optional, Set, Tuple, Type, TypedDict, Union
+from data_structures import EXERCISE_THRESHOLD, NUM_WORDS_PER_LESSON, CorrectionStrategy, LexicalItem, Score, UserScore
+from database_orm import DatabaseManager, Order, OrderedTask, ValueDoesNotExistInDB
 from evaluation import Evaluation, HistoryEntry
 from task import Task
 from task_generator import TaskFactory
-from itertools import chain
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,7 @@ class ErrorCorrectionStrategy(ABC):
         self.db_manager = db_manager
 
     @abstractmethod
-    def try_generate_task_in_advance(self, task_sequence: List[Task]) -> Union[Task, CorrectionStrategy]:
+    def try_generate_task_in_advance(self, task_sequence: List[Union[Task, CorrectionStrategy]]) -> Union[Task, CorrectionStrategy]:
         """
         Try to generate a correction task in advance and return it.
         If it is not possible, return CorrectionStrategy.
@@ -67,7 +66,7 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
     for the target words.
     """
         
-    def try_generate_task_in_advance(self, task_sequence: List[Task]) -> Union[Task, CorrectionStrategy]:
+    def try_generate_task_in_advance(self, task_sequence: List[Union[Task, CorrectionStrategy]]) -> Union[Task, CorrectionStrategy]:
         """
         Try to generate a correction task in advance and return it.
         If it is not possible, return CorrectionStrategy.
@@ -81,6 +80,8 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
         """
         # if the last task has one lexical item to learn, then generate a task
         last_task = task_sequence[-1]
+        if isinstance(last_task, CorrectionStrategy):
+            return CorrectionStrategy.EquivalentTaskStrategy
         last_task_learning_items = last_task.learning_items
         if len(last_task_learning_items) == 1:
             new_task = TaskFactory(self.db_manager).get_task_for_word(last_task_learning_items, last_task.template)
@@ -135,7 +136,7 @@ class LessonTask():
         self.db_manager = db_manager
         self.lesson_id = lesson_id
 
-    def evaluate_task(self, answer: str, task_id: int, order: Tuple[int, int]) -> HistoryEntry:
+    def evaluate_task(self, answer: str, task_id: int, order: Order) -> HistoryEntry:
         """
         Evaluates the task situated at the order within lesson plan
         according to its evaluation policy. Saves the evaluation for the task
@@ -155,13 +156,13 @@ class LessonTask():
         )
         return history_entry
 
-    def get_next_task(self) -> Optional[Dict[str, Tuple[Tuple[int,int], Task]]]:
+    def get_next_task(self) -> Optional[OrderedTask]:
         """
         Accesses the lesson and returns the next task in sequence.
         If the task is not yet defined, generates it and returns it.
         Returns:
             {
-                "order": Tuple[int, int]
+                "order": Order
                 "task": Task
             }
             None if there are no more tasks in the lesson.
@@ -176,14 +177,20 @@ class LessonTask():
             }
         elif next_task["eval"]:
             task_eval = next_task["eval"]
-            if next_task["order"][1] > 0:
+            if next_task["order"].attempt > 0:
                 correction_strategy = next_task["error_correction"]
-                strategy_obj = get_strategy_object(correction_strategy)(self.db_manager)
+                # NOTE correction strategy is not none since it's NongeneratedNextTask
+                strategy_obj = get_strategy_object(correction_strategy)(self.db_manager) # type: ignore
                 new_task = strategy_obj.choose_correction_task(task_eval)
+                if not new_task:
+                    return None
             else:
                 raise Exception("Not implemented for task creation that are not correction tasks")
             
-            return new_task
+            return {
+                "order": next_task["order"],
+                "task": new_task
+            }
         else:
             raise Exception("An error in get next task.")
 
@@ -196,7 +203,7 @@ class ExerciseSequence:
     The criteria for passing or failing an exercise may be the word score.
 
     """
-    def __init__(self, task: Task, strategies_sequence: List[CorrectionStrategy]):
+    def __init__(self, db_manager: DatabaseManager, task: Task, strategies_sequence: List[CorrectionStrategy]):
         """
         Initializes an exercise sequence with a specific task and a predefined sequence of error correction strategies.
 
@@ -207,6 +214,7 @@ class ExerciseSequence:
         self.task = task
         self.strategies_sequence = strategies_sequence
         self.attempt_count = 0
+        self.db_manager = db_manager
 
     def perform_run(self, evaluation: Evaluation) -> Evaluation:
         """
@@ -222,12 +230,9 @@ class ExerciseSequence:
             evaluation = self.perform_task(self.task, evaluation)
         elif self.attempt_count > 0 and self.attempt_count < len(self.strategies_sequence):
             strategy_key = self.strategies_sequence[self.attempt_count]
-            strategy = get_strategy_object(strategy_key)()
-            new_task = strategy.choose_correction_task(evaluation)
-            if new_task:
+            strategy = get_strategy_object(strategy_key)(self.db_manager)
+            if new_task := strategy.choose_correction_task(evaluation):
                 evaluation = self.perform_task(new_task, evaluation)
-            else:
-                pass
         elif self.attempt_count >= len(self.strategies_sequence):
             return evaluation
 
@@ -239,7 +244,6 @@ class ExerciseSequence:
         Records user response for the task, runs evaluations and appends evaluation
         to the evaluation object.
         """
-        # TODO change it to adapt for web app
         user_response = input(task.produce_task())
         evaluation_result = task.evaluate_user_input(user_response)
         evaluation.add_entry(task, user_response, evaluation_result)
@@ -253,7 +257,7 @@ class ExerciseSequence:
         """
         evaluation = Evaluation()
         evaluation = self.perform_run(evaluation)
-        for i in range(len(self.strategies_sequence)):
+        for _ in range(len(self.strategies_sequence)):
             evaluation = self.perform_run(evaluation)
 
         return evaluation
@@ -283,7 +287,7 @@ class Lesson:
         Performs a single iteration of exercise sequence for a word from the set.
         """
         current_task, strategies_sequence = current_task_tuple
-        self.exercise_sequence = ExerciseSequence(current_task, strategies_sequence)
+        self.exercise_sequence = ExerciseSequence(self.db_manager, current_task, strategies_sequence)
         self.evaluation_list.append(self.exercise_sequence.perform_sequence())
 
     def save_final_scores(self, lesson_id: int) -> None:
@@ -397,6 +401,7 @@ class SpacedRepetitionLessonGenerator():
         """
         Returns the first tuple of the lesson plan.
         """
+        logger.info("Generating lesson plan.")
         user_word_scores = self.db_manager.get_latest_word_score_for_user(self.user_id)
         logger.info(f"The latest word scores for the user are {user_word_scores}")
         # choose target words
@@ -409,18 +414,20 @@ class SpacedRepetitionLessonGenerator():
     
     def process_scores(
             self, 
-            scores: Dict[int, Dict[str, Union[Score, datetime]]]
+            scores: Dict[int, UserScore]
         ) -> Tuple[Dict[datetime, Set], Dict[datetime, Set]]:
 
         timestamp_low_scores: Dict[datetime, Set] = {}
         timestamp_high_scores: Dict[datetime, Set] = {}
 
         for o in scores.values():
-            score_set = timestamp_high_scores if o["score"].score >= self.score_threshold else timestamp_low_scores
-            if o["timestamp"] not in score_set:
-                score_set[o["timestamp"]] = {o["score"]}
+            score = o["score"]
+            timestamp = o["timestamp"]
+            score_set = timestamp_high_scores if score.score >= self.score_threshold else timestamp_low_scores
+            if timestamp not in score_set:
+                score_set[timestamp] = {score}
             else:
-                score_set[o["timestamp"]].add(o["score"])
+                score_set[timestamp].add(score)
 
         return timestamp_low_scores, timestamp_high_scores
     
@@ -443,7 +450,7 @@ class SpacedRepetitionLessonGenerator():
         return scores_for_lesson, len_scores, leftover_count
 
 
-    def choose_target_words(self, user_scores: Dict[int, Dict[str, Union[Score, datetime]]]) -> Set[LexicalItem]:
+    def choose_target_words(self, user_scores: Dict[int, UserScore]) -> Set[LexicalItem]:
         """
         Retrieves the latest score for each practiced word by the user.
         Arrange it by time practiced, then from the oldest words:
@@ -466,21 +473,27 @@ class SpacedRepetitionLessonGenerator():
         logger.info(f"The number of new words is {num_new_words_to_learn}")
 
         scores_of_words_to_include_in_lesson = low_scored_to_review + high_scores_to_select[:(self.words_per_lesson - len(low_scored_to_review) - num_new_words_to_learn)]        
-        
-        words_for_review = set([self.db_manager.get_word_by_id(score.word_id) for score in scores_of_words_to_include_in_lesson])
+
+        words_for_review = {
+            self.db_manager.get_word_by_id(score.word_id)
+            for score in scores_of_words_to_include_in_lesson
+        }
+        if not all(words_for_review):
+            raise ValueDoesNotExistInDB("A word object was not found in the database in words for review.")
         logger.info("Words for review are %s", ", ".join(map(str, list(words_for_review))))
 
         # Retrieve new words if needed
         if num_new_words_to_learn > 0:
             new_words = self.db_manager.retrieve_words_for_lesson(self.user_id, num_new_words_to_learn)
         else:
-            new_words = set()
+            new_words: Set[LexicalItem] = set()
 
         logger.info("New words to learn are %s", ", ".join(map(str, list(new_words))))
         words_for_review = words_for_review.union(new_words)
         logger.info(words_for_review)
 
-        return words_for_review
+        # NOTE none of the elements of words_for_review are None since we check it with any()
+        return words_for_review # type: ignore
     
     def determine_num_of_new_words(self, leftover_count: int, high_scores_count: int) -> int:
         # BUG bug when the number of learned words is 0 overall.
@@ -532,7 +545,7 @@ class SpacedRepetitionLessonGenerator():
         ]
         for word in list(words):
             task = task_factory.get_task_for_word({word})
-            task_sequence = [task]
+            task_sequence: List[Union[Task, CorrectionStrategy]] = [task]
             # generate strategy sequence tasks
             for strategy in strategy_sequence:
                 strategy_class = get_strategy_object(strategy)

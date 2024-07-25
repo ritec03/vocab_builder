@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
-from enum import Enum
-from typing import List, Set, Dict, Type
-import copy
-from data_structures import EXERCISE_THRESHOLD, FourChoiceAnswer, LexicalItem, Score, TaskType
+from typing import Set, Dict, Type
+from data_structures import FourChoiceAnswer, LexicalItem, Score, TaskType
 from evaluation_method import AIEvaluation, EvaluationMethod
 from task_template import Resource, TaskTemplate
 import logging
@@ -50,7 +48,7 @@ class Task(ABC):
         """
         return self.template.substitute(self.resources)
 
-    def evaluate_user_input(self, user_input: str) -> List[Score]:
+    def evaluate_user_input(self, user_input: str) -> Set[Score]:
         """
         :return: list of tuples of word id and score
         The list should be equal to the power of the learning_items set and should
@@ -98,7 +96,7 @@ class OneWayTranslaitonTask(Task):
     def initialize_evaluation_method(self) -> EvaluationMethod:
         return AIEvaluation({"task": self.produce_task()})
     
-    def evaluate_user_input(self, user_input: str) -> List[Score]:
+    def evaluate_user_input(self, user_input: str) -> Set[Score]:
         if not isinstance(user_input, str):
             raise ValueError("User input is not a string.")
         return super().evaluate_user_input(user_input)
@@ -139,7 +137,7 @@ class FourChoiceTask(Task):
     def initialize_evaluation_method(self) -> EvaluationMethod:
         return AIEvaluation({"task": self.produce_task()})
     
-    def evaluate_user_input(self, user_input: str) -> List[Score]:
+    def evaluate_user_input(self, user_input: str) -> Set[Score]:
         if user_input not in [a.name for a in list(FourChoiceAnswer)]:
             raise ValueError("User input is not one of four options.")
         return super().evaluate_user_input(user_input)

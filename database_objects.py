@@ -279,12 +279,11 @@ class HistoryEntrieDBObj(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     evaluation_id = mapped_column(Integer, ForeignKey("evaluations.id"))
-    # TODO rename to attempt
-    sequence_number: Mapped[int] = mapped_column()
+    attempt: Mapped[int] = mapped_column()
     task_id = mapped_column(Integer, ForeignKey("tasks.id"))
     response: Mapped[str]
     scores: Mapped[List["EntryScoreDBObj"]] = relationship("EntryScoreDBObj")
-    __table_args__ = (UniqueConstraint("evaluation_id", "sequence_number"),)
+    __table_args__ = (UniqueConstraint("evaluation_id", "attempt"),)
 
 
 class EntryScoreDBObj(Base): # NOTE potentially remove this table

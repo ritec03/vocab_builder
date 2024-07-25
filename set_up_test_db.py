@@ -1,5 +1,5 @@
 import json
-from typing import List, Tuple
+from typing import List
 
 import pandas as pd
 from data_structures import TaskType, Language
@@ -69,7 +69,7 @@ def write_template_json(template: TaskTemplate, file_path: str):
 
 # Example usage
 if __name__ == "__main__":
-    # templates = read_templates_from_json("templates.json")
+    # templates = read_templates_from_json(TEMPLATED_FILE_DIRECTORY)
     # word_freq_output_file_path = "word_freq.txt"
     # word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
     # filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]

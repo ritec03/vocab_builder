@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, unique
-from typing import Optional, Set
+from typing import Final, Optional, Set, TypedDict
 from math import floor
 
 MAX_USER_NAME_LENGTH = 20
@@ -10,6 +10,9 @@ MIN_SCORE = 0
 EXERCISE_THRESHOLD = MAX_SCORE/2
 NUM_WORDS_PER_LESSON = 2
 NUM_NEW_WORDS_PER_LESSON = floor(NUM_WORDS_PER_LESSON/3)
+
+TASKS_FILE_DIRECTORY: Final = "db_data/tasks.json"
+TEMPLATED_FILE_DIRECTORY: Final = "db_data/templates.json"
 
 class FourChoiceAnswer(Enum):
     A = "A"
@@ -81,6 +84,10 @@ class Resource():
     resource_id: int
     resource: str
     target_words: Set[LexicalItem]
+
+class UserScore(TypedDict):
+    score: Score
+    timestamp: datetime
     
 @dataclass
 class TimePeriodCriterion:

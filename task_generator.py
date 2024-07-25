@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 import json
 import random
-from typing import Dict, List, Set, Tuple
-from data_structures import LexicalItem, TaskType
+from typing import Dict, List, Optional, Set, Tuple
+from data_structures import TASKS_FILE_DIRECTORY, LexicalItem, TaskType
 from database_orm import DatabaseManager
 from llm_chains import invoke_task_generation_chain
 from task import Task
@@ -17,7 +17,7 @@ class TaskFactory:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
 
-    def get_task_for_word(self, target_words: Set[LexicalItem], template: TaskTemplate=None, criteria: List=[]) -> Task:
+    def get_task_for_word(self, target_words: Set[LexicalItem], template: Optional[TaskTemplate]=None, criteria: List=[]) -> Task:
         """
         Retrieves or generates tasks based on the target set of words and additional criteria.
         
@@ -34,7 +34,7 @@ class TaskFactory:
         else:
             return self.generate_task(target_words, template, criteria)
 
-    def generate_task(self, target_words: Set[LexicalItem], template: TaskTemplate=None, criteria: List=[]) -> Task:
+    def generate_task(self, target_words: Set[LexicalItem], template: Optional[TaskTemplate]=None, criteria: List=[]) -> Task:
         """
         Generates a new task based on the target words and criteria.
         This method should be invoked when there are not tasks that
@@ -89,9 +89,9 @@ class TaskGenerator(ABC):
             self, 
             target_words: Set[LexicalItem], 
             task_type: TaskType,
-            template: TaskTemplate=None,
-            answer: str=None, 
-            resources: Dict[str, Resource]=None,
+            template: Optional[TaskTemplate]=None,
+            answer: Optional[str]=None, 
+            resources: Optional[Dict[str, Resource]]=None,
         ) -> Task:
         """
         Creates a Task object from the template, resources, and correct answer.
@@ -109,6 +109,8 @@ class TaskGenerator(ABC):
         # TODO think about logic for choosing templates
         if not template:
             template = TemplateRetriever(self.db_manager).get_random_template_for_task_type(task_type)
+        if not template.id:
+            raise Exception("Template does not have an id. Perhaps it's not been put into the database.")
         if not resources:
             resources, answer = self.fetch_or_generate_resources(template, target_words)
         if not answer:
@@ -133,7 +135,7 @@ class ManualTaskGenerator(TaskGenerator):
     pass
 
 class AITaskGenerator(TaskGenerator):
-    def create_task(self, target_words: Set[LexicalItem], task_type: TaskType, template: TaskTemplate = None, answer: str = None, resources: Dict[str, Resource] = None) -> Task:
+    def create_task(self, target_words: Set[LexicalItem], task_type: TaskType, template: Optional[TaskTemplate] = None, answer: Optional[str] = None, resources: Optional[Dict[str, Resource]] = None) -> Task:
         """
         Additionally to creating a task, saves a serialized version
         of the task to file called tasks.json.
@@ -142,13 +144,13 @@ class AITaskGenerator(TaskGenerator):
         # TODO ignore IDs
         try:
             try:
-                with open('tasks.json', 'r') as f:
+                with open(TASKS_FILE_DIRECTORY, 'r') as f:
                     existing_tasks = json.load(f)
             except:
                 existing_tasks = []
 
             existing_tasks.append(task.to_json())
-            with open('tasks.json', 'w') as f:
+            with open(TASKS_FILE_DIRECTORY, 'w') as f:
                 json.dump(existing_tasks, f, indent=4)
         except Exception as e:
             logger.warning("Failed to save generated tasks due to this error", e)

@@ -1,18 +1,16 @@
 import json
 from typing import List
 import unittest
-from flask import Flask
 import pandas as pd
 from sqlalchemy import Tuple
 from app_factory import create_app
-from data_structures import NUM_WORDS_PER_LESSON
+from data_structures import TASKS_FILE_DIRECTORY, TEMPLATED_FILE_DIRECTORY
 from database_orm import DatabaseManager, read_tasks_from_json, read_templates_from_json
-from exercise import SpacedRepetitionLessonGenerator
 
 class UserBlueprintTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        templates = read_templates_from_json("templates.json")
+        templates = read_templates_from_json(TEMPLATED_FILE_DIRECTORY)
         word_freq_output_file_path = "word_freq.txt"
         word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
         filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
@@ -88,13 +86,13 @@ class LessonBlueprintTestCase(unittest.TestCase):
 
     def prepopulate_db(self, db_manager: DatabaseManager):
         # add template and create template dict
-        templates = read_templates_from_json("templates.json")
+        templates = read_templates_from_json(TEMPLATED_FILE_DIRECTORY)
         template_dict = dict()
         for template in templates:
             added_template_id = db_manager.add_template(template)
             template_dict[template.get_template_string()] = added_template_id
         db_manager.add_words_to_db(self.list_of_tuples)
-        tasks = read_tasks_from_json("tasks.json")
+        tasks = read_tasks_from_json(TASKS_FILE_DIRECTORY)
         for task in tasks:
             task.template.id = template_dict[task.template.get_template_string()]
             for key in task.resources.keys():
@@ -114,9 +112,9 @@ class LessonBlueprintTestCase(unittest.TestCase):
         res = self.client.post(f'/users/{self.user_id}/lessons')
         self.assertEqual(res.status_code, 201)
         self.assertIn('lesson_id', res.get_json())
-        self.assertIn('task', res.get_json())
-        self.assertIn('order', res.get_json()["task"])
-        self.assertIn('first_task', res.get_json()["task"])
+        self.assertIn('first_task', res.get_json())
+        self.assertIn('order', res.get_json()["first_task"])
+        self.assertIn('task', res.get_json()["first_task"])
 
     # TODO think about the random nature of the tests here.
     def test_submit_answer(self):
@@ -124,8 +122,8 @@ class LessonBlueprintTestCase(unittest.TestCase):
         data = res.get_json()
 
         request_data = {
-            "task_id": data["task"]["first_task"]["id"],
-            "task_order": data["task"]["order"],
+            "task_id": data["first_task"]["task"]["id"],
+            "task_order": data["first_task"]["order"],
             "answer": "B"
         }
 
@@ -142,7 +140,7 @@ class LessonBlueprintTestCase(unittest.TestCase):
         self.assertIn("score", response_data)
         self.assertIn("next_task", response_data)
         # TODO convert order to a list from tuple?
-        self.assertEquals(response_data["next_task"]["order"], [data["task"]["order"][0]+1, data["task"]["order"][1]])
+        self.assertEqual(response_data["next_task"]["order"], {"sequence_num": data["first_task"]["order"]["sequence_num"]+1, "attempt": data["first_task"]["order"]["attempt"]})
 
     def test_finish_lesson(self):
         # NOTE for this test for now set NUM_WORDS_PER_LESSON to 2 manually
@@ -153,8 +151,8 @@ class LessonBlueprintTestCase(unittest.TestCase):
 
         # submit the task 
         request_data = {
-            "task_id": data["task"]["first_task"]["id"],
-            "task_order": data["task"]["order"],
+            "task_id": data["first_task"]["task"]["id"],
+            "task_order": data["first_task"]["order"],
             "answer": "B"
         }
 

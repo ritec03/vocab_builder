@@ -8,7 +8,6 @@ class HistoryEntry:
     Represents an entry of task, user response, and its evaluation.
     Each history entry can record evaluations for multiple words tested in the task.
     """
-    # TODO add type checks for inputs
     def __init__(self, task: Task, response: str, evaluation_result: Set[Score], correction=None):
         # TODO evaluation result should restrict to one score per word.
         self.task = task
@@ -37,7 +36,7 @@ class Evaluation:
     def get_last_task(self) -> Task:
         return self._get_last_history().task
     
-    def get_last_scores(self) -> List[Score]:
+    def get_last_scores(self) -> Set[Score]:
         """
         Returns final score for the last evaluation (history entry)
 
@@ -45,7 +44,7 @@ class Evaluation:
         """
         return self._get_last_history().evaluation_result
     
-    def get_last_words_scored_below(self, theshold: int) -> Set[LexicalItem]:
+    def get_last_words_scored_below(self, theshold: float) -> Set[LexicalItem]:
         """
         Returns a set of lexical items that were scored below the threshold
         in the last evaluation history entry.
@@ -58,7 +57,7 @@ class Evaluation:
                 )
             )
         )
-        words_to_retry = list(filter(
+        words_to_retry = set(filter(
                 (lambda x: x.id in last_low_scored_word_ids),
                 self._get_last_history().task.learning_items
             )
@@ -86,8 +85,8 @@ class Evaluation:
         Returns final scores for all practiced words by 
         getting the highest score for each word evaluated in history.
         """
-        all_scores = set().union(*[h.evaluation_result for h in self.history])
-        highest_scores_dict: Dict[str, Score] = {}
+        all_scores: Set[Score] = set().union(*[h.evaluation_result for h in self.history])
+        highest_scores_dict: Dict[int, Score] = {}
         for score in list(all_scores):
             if score.word_id not in highest_scores_dict or score.score > highest_scores_dict[score.word_id].score:
                 highest_scores_dict[score.word_id] = score

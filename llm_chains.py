@@ -1,6 +1,6 @@
 import json
 import random
-from typing import Dict, List, Set
+from typing import Dict, Set
 from data_structures import LexicalItem
 from secret import OPEN_AI_KEY
 from langchain.prompts import PromptTemplate
@@ -15,7 +15,7 @@ from langchain_core.pydantic_v1 import BaseModel, Field
 # langchain.debug = True
 
 llm = ChatOpenAI(model="gpt-3.5-turbo-1106", temperature=0.7, openai_api_key=OPEN_AI_KEY, streaming=False)
-llm4 = ChatOpenAI(model="gpt-4", temperature=0.7, openai_api_key=OPEN_AI_KEY, streaming=False)
+llm4 = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, openai_api_key=OPEN_AI_KEY, streaming=False)
 
 def choose_topic():
     topic_list = [
