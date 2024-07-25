@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Set, Dict, Type
 from data_structures import FourChoiceAnswer, LexicalItem, Score, TaskType
-from evaluation_method import AIEvaluation, EvaluationMethod
+from evaluation_method import AIEvaluation, EvaluationMethod, ExactMatchingEvaluation
 from task_template import Resource, TaskTemplate
 import logging
 
@@ -72,7 +72,8 @@ class Task(ABC):
             'resources': converted_resources,
             'learning_items': [item.to_json() for item in self.learning_items],
             'correctAnswer': self.correctAnswer,
-            'id': self.id
+            'id': self.id,
+            'task_type': self.template.task_type.name
         }
     
 class OneWayTranslaitonTask(Task):
@@ -135,7 +136,8 @@ class FourChoiceTask(Task):
         super().__init__(template, resources, learning_items, answer, task_id)
 
     def initialize_evaluation_method(self) -> EvaluationMethod:
-        return AIEvaluation({"task": self.produce_task()})
+        # TODO change evaluation
+        return ExactMatchingEvaluation()
     
     def evaluate_user_input(self, user_input: str) -> Set[Score]:
         if user_input not in [a.name for a in list(FourChoiceAnswer)]:

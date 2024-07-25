@@ -1,6 +1,7 @@
 
 export interface Task {
     id: number;
+    task_type: 'ONE_WAY_TRANSLATION' | 'FOUR_CHOICE';
     task_string: string;
     template: {
         id: number;

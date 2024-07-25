@@ -19,7 +19,6 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onSubmit }) => {
 
     return (
         <div className="max-w-md w-full bg-white p-8 rounded shadow">
-            <h2 className="text-2xl font-bold mb-4">{task.template.task_type}</h2>
             <p className="mb-4">{task.task_string}</p>
             <form onSubmit={handleSubmit}>
                 <div className="mb-4">
