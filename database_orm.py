@@ -1,7 +1,7 @@
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
-from typing import Dict, List, Optional, Set, Tuple, TypedDict, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, TypedDict, Union
 import pandas as pd
 from sqlalchemy import (
     and_,
@@ -83,6 +83,8 @@ class LessonHead(TypedDict):
 class ExpandedScore(TypedDict):
     word: LexicalItem
     score: int
+
+LessonPlan = List[Tuple[Task, List[Union[CorrectionStrategy, Task]]]]
 
 class ValueDoesNotExistInDB(LookupError):
     """
@@ -954,17 +956,48 @@ class DatabaseManager:
     METHODS FOR WORKING WITH LESSONS
     """
 
+    def serialize_lesson_head(self, lesson_head: LessonHead) -> Optional[Dict[str, Any]]:
+        """
+        Serializes a LessonHead object into a dictionary.
+
+        Args:
+            lesson_head (LessonHead): The LessonHead object to be serialized.
+
+        Returns:
+            Optional[Dict[str, Any]]: The serialized LessonHead object as a dictionary.
+
+        Raises:
+            Exception: If the task is empty after converting to a dictionary.
+        """
+        task = lesson_head["first_task"]["task"].to_json()
+        if not task:
+            message = "Task is empty after converting to dict."
+            logger.warning(message)
+            raise Exception(message)
+        return {
+            "lesson_id": lesson_head["lesson_id"],
+            "first_task": {
+                "order": asdict(lesson_head["first_task"]["order"]),
+                "task": task
+            }
+        }
+
+
     def retrieve_lesson(self, user_id: int) -> Optional[LessonHead]:
         """
-        Retrieves lesson_id and first task for a lesson if there is
-        a new uncompleted lesson for the user. Otherwise, returns None.
-        There is a new uncompleted lesson for the user if there is a lesson
-        that has completed as false and none of which tasks are marked as
-        completed.
+        Retrieves the lesson ID and the first uncompleted task for a lesson.
+        If lesson is new this is going to be the first task. And if it is not,
+        then the first task that is marked as uncompleted. Otherwise, it returns None.
+        
+        Args:
+            user_id (int): The ID of the user.
 
-        Assumes the user exists.
+        Raises:
+            Exception: If multiple uncompleted lessons are found for the user.
+            Exception: If the new lesson contains zero tasks or the sequence numbering is incorrect.
 
-        Returns: LessonHead or None
+        Returns:
+            LessonHead or None: The lesson head object or None if there is no new uncompleted lesson.
         """
         with managed_session(self.Session) as session:
             # Retrieve the uncompleted lessons for the user
@@ -986,35 +1019,57 @@ class DatabaseManager:
                 return None
 
             latest_lesson = lessons[0]
-            logger.info(f"The latest uncompleted lesson with id {latest_lesson.id} was found.")
+            logger.info(f"The latest uncompleted lesson with ID {latest_lesson.id} was found.")
 
-            first_task_id = None
-            # Check if all tasks in the lesson are uncompleted
-            for task in latest_lesson.lesson_plan.tasks:
-                if task.completed:
-                    raise Exception("Found a completed task in an uncompleted lesson.")
-                if task.sequence_num == 0 and task.attempt_num == 0:
-                    first_task_id = task.task_id
-
+            first_non_completed_task = None
             # Retrieve the first uncompleted task in the lesson plan
-            if not first_task_id:
-                raise Exception("New lesson contains zero tasks or sequence numbering is wrong.")
+            # use sorted tasks by (sequence_num, attempt) increasing
+            # to get first uncompleted task
+            sorted_tasks = sorted(latest_lesson.lesson_plan.tasks, key=lambda task: (task.sequence_num, task.attempt_num))
+            for task in sorted_tasks:
+                if not task.completed:
+                    first_non_completed_task = task
+                    break
+
+            if not first_non_completed_task:
+                raise Exception("New lesson contains zero tasks or sequence numbering is incorrect.")
             
-            task = self.get_task_by_id(first_task_id)
+            task = self.get_task_by_id(first_non_completed_task.task_id)
 
             # Construct the response dictionary
             return {
                 "lesson_id": latest_lesson.id,
                 "first_task": {
-                    "order": Order(0,0),
+                    "order": Order(first_non_completed_task.sequence_num, first_non_completed_task.attempt_num),
                     "task": task
                 }
             }
+        
+    def retrieve_lesson_serializeable(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves lesson_id and first task for a lesson if there is
+        a new or uncompleted lesson for the user. Otherwise, returns None.
+    
+        Assumes the user exists.
+
+        Raises Exception if the task conversion to dict fails.
+
+        Args:
+            user_id (int): The ID of the user.
+
+        Returns:
+            Optional[Dict[str, Any]]: A dictionary containing the lesson_id and
+            the first uncompleted task for the lesson, or None if there is no
+            new or uncompleted lesson for the user.
+        """
+        if (lesson_head := self.retrieve_lesson(user_id)):
+            return self.serialize_lesson_head(lesson_head)
+        return None
 
     def save_lesson_plan(
             self,
             user_id: int, 
-            lesson_plan: List[Tuple[Task, List[Union[CorrectionStrategy, Task]]]]
+            lesson_plan: LessonPlan
         ) -> LessonHead:
         """
         Initializes a lesson and saves lesson plan for the lesson.
@@ -1088,6 +1143,29 @@ class DatabaseManager:
                     "task": lesson_plan[0][0]
                 }
             }
+        
+    def save_lesson_plan_serializable(
+            self,
+            user_id: int, 
+            lesson_plan: LessonPlan
+        ) -> Optional[Dict[str, Any]]:
+        """
+        Saves a lesson plan and returns a serializable representation of LessonHead
+
+        Args:
+        - self: The instance of the class.
+        - user_id (int): The ID of the user.
+        - lesson_plan (LessonPlan): The lesson plan to save.
+
+        Returns:
+        - Optional[Dict[str, Any]]: A dictionary representing the saved lesson plan in a serializable format.
+
+        Raises:
+        - Exception: If the task is empty after converting to a dictionary.
+        """
+        if (lesson_head := self.save_lesson_plan(user_id, lesson_plan)):
+            return self.serialize_lesson_head(lesson_head)
+        return None
         
     def save_evaluation_for_task(
         self, 

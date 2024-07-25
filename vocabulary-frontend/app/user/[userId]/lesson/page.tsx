@@ -1,13 +1,14 @@
 // app/user/[userId]/lesson/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import TaskCard from '../../../ui/components/TaskCard';
 import ScoreCard from '../../../ui/components/ScoreCard';
 import Header from '../../../ui/components/Header';
-import { LexicalItem, Score, Task } from '@/app/lib/definitions';
+import { Score, Task } from '@/app/lib/definitions';
 
 interface Order {
     sequence_num: number;
@@ -30,54 +31,70 @@ interface SubmitTaskResponse {
     final_score?: Score[];
 }
 
+interface SubmitTask {
+    userId: string;
+    lessonId: number;
+    taskId: number;
+    order: Order;
+    answer: string;
+}
+
+const fetchLesson = async (userId: string): Promise<LessonHead> => {
+    const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/lessons`);
+    return response.data;
+};
+
+const submitTask = async ({ userId, lessonId, taskId, order, answer }: SubmitTask) => {
+    const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/lessons/${lessonId}/tasks/submit`, {
+        task_id: taskId,
+        task_order: order,
+        answer
+    });
+    return response.data;
+};
+
 const LessonPage: React.FC = () => {
     const params = useParams();
     const userId = params.userId as string;
     const router = useRouter();
-    const [lesson, setLesson] = useState<LessonHead | null>(null);
-    const [currentTask, setCurrentTask] = useState<{task: Task, order: Order} | null>(null);
+
+    const [currentTask, setCurrentTask] = useState<OrderedTask | null>(null);
     const [score, setScore] = useState<Score[] | null>(null);
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(true);
-    const [checking, setChecking] = useState(false);
 
-    useEffect(() => {
-        const fetchLesson = async () => {
-            try {
-                const response: {data: LessonHead} = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/lessons`);
-                setLesson(response.data);
-                setCurrentTask({task:response.data.first_task.task, order: response.data.first_task.order});
-                setLoading(false);
-            } catch (error) {
-                setError('Failed to fetch lesson.');
-                setLoading(false);
-            }
-        };
+    const { data: lesson, error, isLoading, isError, isSuccess } = useQuery<LessonHead>(
+        {queryKey: ['lesson', userId],
+        queryFn: async () => {
+                const data = await fetchLesson(userId);
+                setCurrentTask(data.first_task);
+                return data;
+            },
+        }, 
+    );
 
-        fetchLesson();
-    }, [userId]);
-
+    const mutationSubmitTask = useMutation({
+        mutationFn: async ({ userId, lessonId, taskId, order, answer }: SubmitTask) => {
+            return await submitTask({ userId, lessonId, taskId, order, answer });
+        },
+        onSuccess: (data: SubmitTaskResponse) => {
+            setScore(data.score);
+            setCurrentTask(data.next_task || null);
+        }
+    });        
+        
     const handleTaskSubmit = async (answer: string) => {
         if (lesson && currentTask) {
-            setChecking(true);
-            try {
-                const response: {data: SubmitTaskResponse} = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/lessons/${lesson.lesson_id}/tasks/submit`, {
-                    task_id: currentTask.task.id,
-                    task_order: currentTask.order,
-                    answer
+            mutationSubmitTask.mutate(
+                { 
+                    userId, 
+                    lessonId: lesson.lesson_id, 
+                    taskId: currentTask.task.id, 
+                    order: currentTask.order, 
+                    answer 
                 });
-                setCurrentTask(response.data.next_task ? response.data.next_task : null);
-                setScore(response.data.score);
-                setChecking(false);
-            } catch (error) {
-                setError('Failed to submit task.');
-                setChecking(false);
-            }
         }
     };
 
     const handleFinishLesson = () => {
-        //  TODO handle finishing lesson early through the button or closing window or routing.
         router.push(`/user/${userId}`);
     };
 
@@ -88,26 +105,33 @@ const LessonPage: React.FC = () => {
     return (
         <main className="flex min-h-screen flex-col items-center justify-center p-24">
             <Header />
-            {error && <p className="text-red-500">{error}</p>}
-            {loading ? (
-                <p>Loading lesson...</p>
-            ) : checking ? (
-                <p>Checking your answer...</p>
-            ) : score ? (
-                <ScoreCard hasNextTask={currentTask !== null} score={score} onContinue={handleContinue} onFinishLesson={handleFinishLesson} />
-            ) : currentTask ? (
-                <TaskCard task={currentTask.task} onSubmit={handleTaskSubmit} />
+            {(isLoading) ? (
+                <p>Just a moment. Loading your lesson...</p>
+            ) : (isError) ? (
+                <p className="text-red-500">Failed to fetch lesson.</p>
+            ) : ((isSuccess)) ? (
+                mutationSubmitTask.isPending ? (
+                    <p>Submitting your answer...</p>
+                ) : score ? (
+                    <ScoreCard hasNextTask={currentTask !== null} score={score} onContinue={handleContinue} onFinishLesson={handleFinishLesson} />
+                ) : currentTask ? (
+                    <TaskCard task={currentTask.task} onSubmit={handleTaskSubmit} />
+                ) : (
+                    <div className="text-center">
+                        <p>No more tasks available.</p>
+                        <button
+                            onClick={handleFinishLesson}
+                            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline mt-4"
+                        >
+                            Finish Lesson
+                        </button>
+                    </div>
+                )
             ) : (
-                <div className="text-center">
-                    <p>No more tasks available.</p>
-                    <button
-                        onClick={handleFinishLesson}
-                        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline mt-4"
-                    >
-                        Finish Lesson
-                    </button>
-                </div>
-            )}
+                <p>Something went wrong.</p>
+            )
+            
+            }
         </main>
     );
 };
