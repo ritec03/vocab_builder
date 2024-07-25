@@ -58,7 +58,7 @@ SQLite is utilized as the database solution due to its lightweight, file-based n
 
 #### LangChain with OpenAI GPT-4
 
-LangChain integrates OpenAI GPT-4 for generating tasks and grading user responses.
+LangChain is a framework designed to simplify the development of applications that use large language models (LLMs). It provides tools and interfaces to streamline the integration of LLMs into various tasks. LangChain integrates OpenAI GPT-4 for generating tasks and grading user responses.
 
 ### Frontend
 

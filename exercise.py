@@ -231,11 +231,8 @@ class ExerciseSequence:
         elif self.attempt_count > 0 and self.attempt_count < len(self.strategies_sequence):
             strategy_key = self.strategies_sequence[self.attempt_count]
             strategy = get_strategy_object(strategy_key)(self.db_manager)
-            new_task = strategy.choose_correction_task(evaluation)
-            if new_task:
+            if new_task := strategy.choose_correction_task(evaluation):
                 evaluation = self.perform_task(new_task, evaluation)
-            else:
-                pass
         elif self.attempt_count >= len(self.strategies_sequence):
             return evaluation
 
@@ -260,7 +257,7 @@ class ExerciseSequence:
         """
         evaluation = Evaluation()
         evaluation = self.perform_run(evaluation)
-        for i in range(len(self.strategies_sequence)):
+        for _ in range(len(self.strategies_sequence)):
             evaluation = self.perform_run(evaluation)
 
         return evaluation
@@ -476,9 +473,12 @@ class SpacedRepetitionLessonGenerator():
         logger.info(f"The number of new words is {num_new_words_to_learn}")
 
         scores_of_words_to_include_in_lesson = low_scored_to_review + high_scores_to_select[:(self.words_per_lesson - len(low_scored_to_review) - num_new_words_to_learn)]        
-        
-        words_for_review = set([self.db_manager.get_word_by_id(score.word_id) for score in scores_of_words_to_include_in_lesson])
-        if any(not word for word in words_for_review):
+
+        words_for_review = {
+            self.db_manager.get_word_by_id(score.word_id)
+            for score in scores_of_words_to_include_in_lesson
+        }
+        if not all(words_for_review):
             raise ValueDoesNotExistInDB("A word object was not found in the database in words for review.")
         logger.info("Words for review are %s", ", ".join(map(str, list(words_for_review))))
 
