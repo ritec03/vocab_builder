@@ -21,8 +21,12 @@ DATABASE_FILE = os.getenv("DATABASE_FILE")
 FLASK_INSTANCE_FOLDER = os.getenv("FLASK_INSTANCE_FOLDER")
 OPEN_AI_KEY = os.getenv("OPEN_AI_KEY")
 
-if not DATABASE_FILE or not FLASK_INSTANCE_FOLDER or not OPEN_AI_KEY:
-    raise ValueError("Please set the DATABASE_FILE, FLASK_INSTANCE_FOLDER, and OPEN_AI_KEY environment variables.")
+if not DATABASE_FILE:
+    raise ValueError("Please set the DATABASE_FILE environment variable.")
+if not FLASK_INSTANCE_FOLDER:
+    raise ValueError("Please set the FLASK_INSTANCE_FOLDER environment variable.")
+if not OPEN_AI_KEY:
+    raise ValueError("Please set the OPEN_AI_KEY environment variable.")
 
 FULL_DATABASE_PATH = os.path.join(FLASK_INSTANCE_FOLDER, DATABASE_FILE)
 

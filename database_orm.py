@@ -206,9 +206,17 @@ class DatabaseManager:
         if app: 
             self.init_app(app)
         elif not os.path.exists(FULL_DATABASE_PATH):
-            self.prepopulate_db()
+            self._prepopulate_db()
             
-    def prepopulate_db(self):
+    def _prepopulate_db(self):
+        """
+        Prepopulates the database with initial data, including words, templates, resources, and tasks.
+
+        Note: This method assumes that the necessary files and directories exist.
+
+        Returns:
+            None
+        """
         engine = create_engine(f'sqlite:///{(FULL_DATABASE_PATH)}', echo=False)
         Base.metadata.create_all(engine)
         self.Session = scoped_session(sessionmaker(bind=engine))
@@ -219,7 +227,7 @@ class DatabaseManager:
         list_of_tuples: List[Tuple[str, str, int]] = list(filtered_dataframe.to_records(index=False))
         # convert numpy.int64 to Python integer
         list_of_tuples = [(word, pos, int(freq)) for (word, pos, freq) in list_of_tuples][:100]
-        
+
         indices = self.add_words_to_db(list_of_tuples)
         logger.info(indices)
 
@@ -235,7 +243,7 @@ class DatabaseManager:
             for key in task.resources.keys():
                 self.add_resource_manual(task.resources[key].resource, task.resources[key].target_words)
             self.add_task(task.template.id, task.resources, task.learning_items, task.correctAnswer)
-            
+
         self.shutdown_session()
 
     def init_app(self, app: Flask):
