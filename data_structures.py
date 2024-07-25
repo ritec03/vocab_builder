@@ -3,6 +3,8 @@ from datetime import datetime
 from enum import Enum, unique
 from typing import Final, Optional, Set, TypedDict
 from math import floor
+from dotenv import load_dotenv
+import os
 
 MAX_USER_NAME_LENGTH = 20
 MAX_SCORE = 10
@@ -11,8 +13,22 @@ EXERCISE_THRESHOLD = MAX_SCORE/2
 NUM_WORDS_PER_LESSON = 2
 NUM_NEW_WORDS_PER_LESSON = floor(NUM_WORDS_PER_LESSON/3)
 
+load_dotenv()
+
 TASKS_FILE_DIRECTORY: Final = "db_data/tasks.json"
 TEMPLATED_FILE_DIRECTORY: Final = "db_data/templates.json"
+DATABASE_FILE = os.getenv("DATABASE_FILE")
+FLASK_INSTANCE_FOLDER = os.getenv("FLASK_INSTANCE_FOLDER")
+OPEN_AI_KEY = os.getenv("OPEN_AI_KEY")
+
+if not DATABASE_FILE:
+    raise ValueError("Please set the DATABASE_FILE environment variable.")
+if not FLASK_INSTANCE_FOLDER:
+    raise ValueError("Please set the FLASK_INSTANCE_FOLDER environment variable.")
+if not OPEN_AI_KEY:
+    raise ValueError("Please set the OPEN_AI_KEY environment variable.")
+
+FULL_DATABASE_PATH = os.path.join(FLASK_INSTANCE_FOLDER, DATABASE_FILE)
 
 class FourChoiceAnswer(Enum):
     A = "A"

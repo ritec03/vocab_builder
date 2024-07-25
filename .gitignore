@@ -13,3 +13,4 @@ db_data/tasks.json
 .coverage
 venv
 __pycache__
+.env
