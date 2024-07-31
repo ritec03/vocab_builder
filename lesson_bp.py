@@ -1,9 +1,9 @@
 from dataclasses import asdict
 import logging
 from flask import Blueprint, request, jsonify, current_app
-
+from lesson_task import LessonTask
 from database_orm import DatabaseManager, Order
-from exercise import LessonTask, SpacedRepetitionLessonGenerator
+from lesson_generator import SpacedRepetitionLessonGenerator
 logger = logging.getLogger(__name__)
 
 lessons_bp = Blueprint('lessons', __name__)

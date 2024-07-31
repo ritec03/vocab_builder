@@ -52,6 +52,7 @@ from database_objects import (
 )
 
 from evaluation import Evaluation, HistoryEntry
+from query_builder import QueryBuilder, QueryCriteria
 from task import Task, get_task_type_class
 from task_template import TaskTemplate
 from flask import Flask
@@ -206,7 +207,11 @@ class DatabaseManager:
         if app: 
             self.init_app(app)
         elif not os.path.exists(FULL_DATABASE_PATH):
+            engine = create_engine(f'sqlite:///{(FULL_DATABASE_PATH)}', echo=False)
+            Base.metadata.create_all(engine)
+            self.Session = scoped_session(sessionmaker(bind=engine))
             self._prepopulate_db()
+            self.shutdown_session()
             
     def _prepopulate_db(self):
         """
@@ -217,10 +222,6 @@ class DatabaseManager:
         Returns:
             None
         """
-        engine = create_engine(f'sqlite:///{(FULL_DATABASE_PATH)}', echo=False)
-        Base.metadata.create_all(engine)
-        self.Session = scoped_session(sessionmaker(bind=engine))
-
         word_freq_output_file_path = "word_freq.txt"
         word_freq_df_loaded = pd.read_csv(word_freq_output_file_path, sep="\t")
         filtered_dataframe = word_freq_df_loaded[word_freq_df_loaded["count"] > 2]
@@ -243,8 +244,6 @@ class DatabaseManager:
             for key in task.resources.keys():
                 self.add_resource_manual(task.resources[key].resource, task.resources[key].target_words)
             self.add_task(task.template.id, task.resources, task.learning_items, task.correctAnswer)
-
-        self.shutdown_session()
 
     def init_app(self, app: Flask):
         engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], echo=False)
@@ -936,6 +935,21 @@ class DatabaseManager:
                 result_tasks.append(task)
 
             return result_tasks
+        
+    def get_tasks_by_criteria(self, user_id: int, criteria: QueryCriteria, limit: int = 50) -> list[Task]:
+        with managed_session(self.Session) as session:
+            task_query = QueryBuilder().build_query(user_id, criteria)
+            task_query = task_query.limit(limit)
+            tasks = session.execute(task_query).scalars().all()
+
+            # Convert TaskDBObj to Task instances
+            result_tasks = []
+            for task_obj in tasks:
+                task = self.convert_task_obj_to_task(task_obj)
+                result_tasks.append(task)
+
+            return result_tasks
+
 
     def remove_task(self, task_id: int) -> None:
         """

@@ -1,64 +1,21 @@
-from abc import ABC, abstractmethod
 import json
-import random
-from typing import Dict, List, Optional, Set, Tuple
+import logging
 from data_structures import TASKS_FILE_DIRECTORY, LexicalItem, TaskType
 from database_orm import DatabaseManager
 from llm_chains import invoke_task_generation_chain
 from task import Task
 from task_template import Resource, TaskTemplate
 from template_retriever import TemplateRetriever
-import logging
+from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
-
-class TaskFactory:
-    """Either retrieves or generates a task"""
-    def __init__(self, db_manager: DatabaseManager):
-        self.db_manager = db_manager
-
-    def get_task_for_word(self, target_words: Set[LexicalItem], template: Optional[TaskTemplate]=None, criteria: List=[]) -> Task:
-        """
-        Retrieves or generates tasks based on the target set of words and additional criteria.
-        
-        :param target_words: The set of target words for which to find or generate tasks.
-        :param criteria: A list of criteria objects to apply in task selection.
-        :return: A list of Task objects.
-        """
-        # TODO implement retrieval of tasks based on criteria.
-        tasks = self.db_manager.get_tasks_for_words(target_words, 10)
-        if tasks:
-            # TODO implement behaviour into learning algorithm that would
-            # choose whether or not to give the user previously done task.
-            return random.choice(tasks) # NOTE for now just return a random task
-        else:
-            return self.generate_task(target_words, template, criteria)
-
-    def generate_task(self, target_words: Set[LexicalItem], template: Optional[TaskTemplate]=None, criteria: List=[]) -> Task:
-        """
-        Generates a new task based on the target words and criteria.
-        This method should be invoked when there are not tasks that
-        satisfy the criteria in db.
-
-        The method will generate task using various means.
-        Generating a task will require choosing or creating template,
-        satisfying criteria for task generation (ignore other criteria),
-        choosing resources and saving the task.
-        """
-        # NOTE choose task type at random for now and only use AI
-        task_generator = AITaskGenerator(self.db_manager)
-        task_type = random.choice(list(TaskType))
-        task = task_generator.create_task(target_words, task_type, template=template)
-        return task
-
-
-
 
 class TaskGenerator(ABC):
     """
     The abstract class defines a component responsible for generation of
     tasks based on criteria.
     """
+
     # TODO think about what to do when only subset of resources in the database
     # - generate the rest?
 
@@ -67,10 +24,10 @@ class TaskGenerator(ABC):
 
     @abstractmethod
     def fetch_or_generate_resources(
-            self, 
-            template: TaskTemplate, 
-            target_words: Set[LexicalItem], 
-        ) -> Tuple[Dict[str, Resource], str]:
+        self,
+        template: TaskTemplate,
+        target_words: set[LexicalItem],
+    ) -> tuple[dict[str, Resource], str]:
         """
         Fetches or generates resources required by a task template, aiming to cover the target lexical items.
         Missing resources will be covered by generation or if generate flag is True, all resources will be generated.
@@ -86,13 +43,13 @@ class TaskGenerator(ABC):
         pass
 
     def create_task(
-            self, 
-            target_words: Set[LexicalItem], 
-            task_type: TaskType,
-            template: Optional[TaskTemplate]=None,
-            answer: Optional[str]=None, 
-            resources: Optional[Dict[str, Resource]]=None,
-        ) -> Task:
+        self,
+        target_words: set[LexicalItem],
+        task_type: TaskType,
+        template: TaskTemplate | None = None,
+        answer: str | None = None,
+        resources: dict[str, Resource] | None = None,
+    ) -> Task:
         """
         Creates a Task object from the template, resources, and correct answer.
 
@@ -108,9 +65,13 @@ class TaskGenerator(ABC):
         """
         # TODO think about logic for choosing templates
         if not template:
-            template = TemplateRetriever(self.db_manager).get_random_template_for_task_type(task_type)
+            template = TemplateRetriever(
+                self.db_manager
+            ).get_random_template_for_task_type(task_type)
         if not template.id:
-            raise Exception("Template does not have an id. Perhaps it's not been put into the database.")
+            raise Exception(
+                "Template does not have an id. Perhaps it's not been put into the database."
+            )
         if not resources:
             resources, answer = self.fetch_or_generate_resources(template, target_words)
         if not answer:
@@ -118,24 +79,30 @@ class TaskGenerator(ABC):
 
         task = self.db_manager.add_task(template.id, resources, target_words, answer)
         return task
-        
-    def check_resource_target_word_match(self, resource_dict: Dict[str, Resource], target_words: Set[LexicalItem]) -> bool:
+
+    def check_resource_target_word_match(
+        self, resource_dict: dict[str, Resource], target_words: set[LexicalItem]
+    ) -> bool:
         # Minimal check that every item in target words appears in at least one resource.
         for word in target_words:
-            found = False
-            for resource in resource_dict.values():
-                if word.id in list(map((lambda x: x.id), resource.target_words)):
-                    found = True
-                    break
+            found = any(
+                word.id in list(map((lambda x: x.id), resource.target_words))
+                for resource in resource_dict.values()
+            )
             if not found:
                 return False
         return True
 
-class ManualTaskGenerator(TaskGenerator):
-    pass
 
 class AITaskGenerator(TaskGenerator):
-    def create_task(self, target_words: Set[LexicalItem], task_type: TaskType, template: Optional[TaskTemplate] = None, answer: Optional[str] = None, resources: Optional[Dict[str, Resource]] = None) -> Task:
+    def create_task(
+        self,
+        target_words: set[LexicalItem],
+        task_type: TaskType,
+        template: TaskTemplate | None = None,
+        answer: str | None = None,
+        resources: dict[str, Resource] | None = None,
+    ) -> Task:
         """
         Additionally to creating a task, saves a serialized version
         of the task to file called tasks.json.
@@ -144,13 +111,13 @@ class AITaskGenerator(TaskGenerator):
         # TODO ignore IDs
         try:
             try:
-                with open(TASKS_FILE_DIRECTORY, 'r') as f:
+                with open(TASKS_FILE_DIRECTORY, "r") as f:
                     existing_tasks = json.load(f)
-            except:
+            except Exception:
                 existing_tasks = []
 
             existing_tasks.append(task.to_json())
-            with open(TASKS_FILE_DIRECTORY, 'w') as f:
+            with open(TASKS_FILE_DIRECTORY, "w") as f:
                 json.dump(existing_tasks, f, indent=4)
         except Exception as e:
             logger.warning("Failed to save generated tasks due to this error", e)
@@ -158,10 +125,10 @@ class AITaskGenerator(TaskGenerator):
         return task
 
     def fetch_or_generate_resources(
-        self, 
-        template: TaskTemplate, 
-        target_words: Set[LexicalItem], 
-    ) -> Tuple[Dict[str, Resource], str]:
+        self,
+        template: TaskTemplate,
+        target_words: set[LexicalItem],
+    ) -> tuple[dict[str, Resource], str]:
         """
         Fetches or generates resources required by a task template, aiming to cover the target lexical items.
 
@@ -171,14 +138,16 @@ class AITaskGenerator(TaskGenerator):
         logger.info(output_dict)
         # Check that output contains all keys of template.parameter_description. Raise exception otherwise
         if not set(template.parameter_description.keys()).issubset(output_dict.keys()):
-            raise ValueError("Output does not contain all keys of template.parameter_description")
-        
-        # Separate answer key-value pair from output (and remove that key from output), then return tuple (Dict of parameter-resource, answer)
-        answer = output_dict.pop('answer', None)
+            raise ValueError(
+                "Output does not contain all keys of template.parameter_description"
+            )
 
-        if answer == None:
+        # Separate answer key-value pair from output (and remove that key from output), then return tuple (Dict of parameter-resource, answer)
+        answer = output_dict.pop("answer", None)
+
+        if answer is None:
             raise ValueError("Answer is absent from the LLM output.")
-    
+
         # Generate resource tuple
         # NOTE for now assuming every resource relates to every target word
         """
@@ -196,9 +165,13 @@ class AITaskGenerator(TaskGenerator):
             * but this would require finding those generated words in the database -> so need functionality for that too.
         Perhaps, to be solved slightly later.
         """
-        resource_dict = {param: self.db_manager.add_resource_manual(value, target_words) for param, value in output_dict.items()}
+        resource_dict = {
+            param: self.db_manager.add_resource_manual(value, target_words)
+            for param, value in output_dict.items()
+        }
         if not self.check_resource_target_word_match(resource_dict, target_words):
-            raise ValueError(f"Some target words are not covered by any generated resource.")
+            raise ValueError(
+                "Some target words are not covered by any generated resource."
+            )
 
         return resource_dict, answer
-    

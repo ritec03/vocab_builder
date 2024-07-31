@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import TaskCard from '../../../ui/components/TaskCard';
+import FourChoiceTaskCard from '../../../ui/components/FourChoiceTaskCard';
 import ScoreCard from '../../../ui/components/ScoreCard';
 import Header from '../../../ui/components/Header';
 import { Score, Task } from '@/app/lib/definitions';
@@ -115,7 +116,11 @@ const LessonPage: React.FC = () => {
                 ) : score ? (
                     <ScoreCard hasNextTask={currentTask !== null} score={score} onContinue={handleContinue} onFinishLesson={handleFinishLesson} />
                 ) : currentTask ? (
-                    <TaskCard task={currentTask.task} onSubmit={handleTaskSubmit} />
+                    currentTask.task.task_type === 'FOUR_CHOICE' ? (
+                        <FourChoiceTaskCard task={currentTask.task} onSubmit={handleTaskSubmit} />
+                    ) : (
+                        <TaskCard task={currentTask.task} onSubmit={handleTaskSubmit} />
+                    )
                 ) : (
                     <div className="text-center">
                         <p>No more tasks available.</p>

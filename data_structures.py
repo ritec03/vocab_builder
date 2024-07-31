@@ -105,26 +105,3 @@ class UserScore(TypedDict):
     score: Score
     timestamp: datetime
     
-@dataclass
-class TimePeriodCriterion:
-    """Represents a criterion based on the time period during which tasks were last practiced."""
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-
-@dataclass
-class NumberOfWordsCriterion:
-    """Represents a criterion based on the number of words involved in the tasks."""
-    min_words: int = 1
-    max_words: Optional[int] = None
-
-@dataclass
-class WordCriterion:
-    """Represents a criterion to include specific words to practice.
-    words: a set of word_ids
-    """
-    words: Set[int]
-
-@dataclass
-class TaskTypeCriterion:
-    """Represents a criterion based on the type of task to choose."""
-    task_types: Set[str]
