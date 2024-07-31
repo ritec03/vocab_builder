@@ -43,7 +43,6 @@ class TaskFactory:
 
     def get_task_for_word(
         self,
-        target_words: set[LexicalItem],
         criteria: QueryCriteria,
         template: TaskTemplate | None = None,
     ) -> Task:
@@ -56,8 +55,10 @@ class TaskFactory:
         """
         if tasks := self.db_manager.get_tasks_by_criteria(self.user_id, criteria, 10):
             return random.choice(tasks)  # NOTE for now just return a random task
+        elif criteria.target_words is not None:
+            return self.generate_task(criteria.target_words, template)
         else:
-            return self.generate_task(target_words, template)
+            raise ValueError("No tasks found and no target words provided.")
 
     def generate_task(
         self,

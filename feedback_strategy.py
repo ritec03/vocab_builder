@@ -132,7 +132,7 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
             Exception: If the new task is the same as the given task.
         """
         new_task = TaskFactory(self.db_manager, self.user_id).get_task_for_word(
-             target_words, QueryCriteria(), task.template
+            QueryCriteria(target_words=target_words, excluded_task_ids={task.id}), task.template
         )
         if new_task.id == task.id:
             raise Exception("Implement criteria not to choose the same task.")

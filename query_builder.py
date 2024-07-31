@@ -22,6 +22,7 @@ class QueryCriteria:
         maxScore: int | None = None,
         taskType: TaskType | None = None,
         target_words: set[LexicalItem] | None = None,
+        excluded_task_ids: set[int] | None = None,
     ):
         """
         max/min scores apply to all target words and only taken into account
@@ -37,6 +38,7 @@ class QueryCriteria:
         self.maxScore = maxScore
         self.taskType = taskType
         self.target_words = target_words
+        self.excluded_task_ids = excluded_task_ids
 
 
 class QueryBuilder:
@@ -141,5 +143,8 @@ class QueryBuilder:
             stmt = self._apply_score_criteria(
                 stmt, criteria.minScore, criteria.maxScore, user_id
             )
+
+        if criteria.excluded_task_ids is not None:
+            stmt = stmt.where(~TaskDBObj.id.in_(criteria.excluded_task_ids))
 
         return stmt

@@ -261,7 +261,7 @@ class SpacedRepetitionLessonGenerator:
         # a target word is targeted by one task only
         # TODO think about how to do it.
         task_factory = TaskFactory(self.db_manager, self.user_id)
-        lesson_plan = []
+        lesson_plan: list[tuple[Task, list[CorrectionStrategy | Task]]] = []
         # TODO devise a strategy of choosing correction strategy.
         # TODO test api with correction strategies too.
         strategy_sequence = [
@@ -270,7 +270,9 @@ class SpacedRepetitionLessonGenerator:
             # CorrectionStrategy.EquivalentTaskStrategy
         ]
         for word in list(words):
-            task = task_factory.get_task_for_word({word}, QueryCriteria(doneByUser=False, target_words={word}))
+            lesson_task_ids = {task.id for _, tasks in lesson_plan for task in tasks if isinstance(task, Task)}
+            lesson_task_ids.union({task.id for task, _ in lesson_plan})
+            task = task_factory.get_task_for_word(QueryCriteria(doneByUser=False, target_words={word}, excluded_task_ids=lesson_task_ids))
             logger.info(f"Added task with id {task.id} for word {word.item}")
             task_sequence: list[Task | CorrectionStrategy] = [task]
             # generate strategy sequence tasks

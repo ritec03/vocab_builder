@@ -195,6 +195,30 @@ class QueryBuilderTest(unittest.TestCase):
             set().union(*[t.learning_items for t in chosen_tasks]),
             target_words
         )
+    
+    def test_query_builder_excluded_tasks_no_tasks(self):
+        # test that if excluded task id criteria is used, the task with that id is not returned
+        user_1_id = self.db_manager.insert_user("User 1")
+        # get three random tasks
+        random_tasks = self.db_manager.get_tasks_by_criteria(user_1_id, QueryCriteria(), len(self.all_tasks))
+        random_tasks_ids = {task.id for task in random_tasks}
+
+        chosen_tasks = self.db_manager.get_tasks_by_criteria(user_1_id, QueryCriteria(excluded_task_ids=random_tasks_ids), 100)
+        chosen_tasks_ids = {task.id for task in chosen_tasks}
+        # check that none of the tasks are in the chosen tasks
+        self.assertTrue(not chosen_tasks_ids)
+
+    def test_query_builder_excluded_tasks_some_tasks(self):
+        # test that if excluded task id criteria is used, the task with that id is not returned
+        user_1_id = self.db_manager.insert_user("User 1")
+        # get three random tasks
+        random_tasks = self.db_manager.get_tasks_by_criteria(user_1_id, QueryCriteria(), 3)
+        random_tasks_ids = {task.id for task in random_tasks}
+
+        chosen_tasks = self.db_manager.get_tasks_by_criteria(user_1_id, QueryCriteria(excluded_task_ids=random_tasks_ids), 100)
+        chosen_tasks_ids = {task.id for task in chosen_tasks}
+        # check that none of the tasks are in the chosen tasks
+        self.assertTrue(random_tasks_ids.isdisjoint(chosen_tasks_ids))
         
 
 if __name__ == '__main__':
