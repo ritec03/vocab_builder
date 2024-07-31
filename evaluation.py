@@ -1,5 +1,4 @@
 
-from typing import Dict, List, Set
 from data_structures import LexicalItem, Score
 from task import Task
 
@@ -8,7 +7,7 @@ class HistoryEntry:
     Represents an entry of task, user response, and its evaluation.
     Each history entry can record evaluations for multiple words tested in the task.
     """
-    def __init__(self, task: Task, response: str, evaluation_result: Set[Score], correction=None):
+    def __init__(self, task: Task, response: str, evaluation_result: set[Score], correction=None):
         # TODO evaluation result should restrict to one score per word.
         self.task = task
         self.response = response
@@ -21,9 +20,9 @@ class Evaluation:
     user input for answer, and evaluation of target words for the task.
     """
     def __init__(self):
-        self.history: List[HistoryEntry] = []
+        self.history: list[HistoryEntry] = []
 
-    def add_entry(self, task: Task, response: str, evaluation_result: Set[Score], correction=None):
+    def add_entry(self, task: Task, response: str, evaluation_result: set[Score], correction=None):
         entry = HistoryEntry(task, response, evaluation_result, correction)
         self.history.append(entry)
 
@@ -36,7 +35,7 @@ class Evaluation:
     def get_last_task(self) -> Task:
         return self._get_last_history().task
     
-    def get_last_scores(self) -> Set[Score]:
+    def get_last_scores(self) -> set[Score]:
         """
         Returns final score for the last evaluation (history entry)
 
@@ -44,7 +43,7 @@ class Evaluation:
         """
         return self._get_last_history().evaluation_result
     
-    def get_last_words_scored_below(self, theshold: float) -> Set[LexicalItem]:
+    def get_last_words_scored_below(self, theshold: float) -> set[LexicalItem]:
         """
         Returns a set of lexical items that were scored below the threshold
         in the last evaluation history entry.
@@ -64,15 +63,15 @@ class Evaluation:
         )
         return words_to_retry
     
-    def get_final_scores_latest(self) -> Set[Score]:
+    def get_final_scores_latest(self) -> set[Score]:
         """
         Returns final scores for all practiced words by 
         getting the latest score for each word evaluated in history.
         """
         # iterate from the latest history
         # create a set of word_ids
-        words: Set[int] = set()
-        final_scores: Set[Score] = set()
+        words: set[int] = set()
+        final_scores: set[Score] = set()
         for history in reversed(self.history):
             for score in history.evaluation_result:
                 if score.word_id not in words:
@@ -80,13 +79,13 @@ class Evaluation:
                     words.add(score.word_id)
         return final_scores
     
-    def get_final_scores_highest(self) -> Set[Score]:
+    def get_final_scores_highest(self) -> set[Score]:
         """
         Returns final scores for all practiced words by 
         getting the highest score for each word evaluated in history.
         """
-        all_scores: Set[Score] = set().union(*[h.evaluation_result for h in self.history])
-        highest_scores_dict: Dict[int, Score] = {}
+        all_scores: set[Score] = set().union(*[h.evaluation_result for h in self.history])
+        highest_scores_dict: dict[int, Score] = {}
         for score in list(all_scores):
             if score.word_id not in highest_scores_dict or score.score > highest_scores_dict[score.word_id].score:
                 highest_scores_dict[score.word_id] = score
