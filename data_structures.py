@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, unique
-from typing import Final, Optional, Set, TypedDict
+from typing import Final, TypedDict
 from math import floor
 from dotenv import load_dotenv
 import os
@@ -10,7 +10,7 @@ MAX_USER_NAME_LENGTH = 20
 MAX_SCORE = 10
 MIN_SCORE = 0
 EXERCISE_THRESHOLD = MAX_SCORE/2
-NUM_WORDS_PER_LESSON = 2
+NUM_WORDS_PER_LESSON = 5
 NUM_NEW_WORDS_PER_LESSON = floor(NUM_WORDS_PER_LESSON/3)
 
 load_dotenv()
@@ -64,29 +64,13 @@ class Score():
     word_id: int
     score: int
 
-class LexicalItem():
-    def __init__(self, item: str, pos: str, freq: int, id: int):
-        self.item = item
-        self.pos = pos
-        self.freq = freq
-        self.id = id
+@dataclass(frozen=True)
+class LexicalItem:
+    item: str
+    pos: str
+    freq: int
+    id: int
 
-    def __eq__(self, other):
-        if isinstance(other, LexicalItem):
-            return (
-                self.item == other.item 
-                and self.pos == other.pos 
-                and self.freq == other.freq 
-                and self.id == other.id
-            )
-        return False
-
-    def __hash__(self):
-        return hash((self.item, self.pos, self.freq, self.id))
-    
-    def __str__(self):
-        return f"LexicalItem(item='{self.item}', pos='{self.pos}', freq={self.freq}, id={self.id})"
-    
     def to_json(self):
         return {
             'item': self.item,
@@ -95,11 +79,11 @@ class LexicalItem():
             'id': self.id
         }
     
-@dataclass
+@dataclass(frozen=True)
 class Resource():
     resource_id: int
     resource: str
-    target_words: Set[LexicalItem]
+    target_words: set[LexicalItem]
 
 class UserScore(TypedDict):
     score: Score
