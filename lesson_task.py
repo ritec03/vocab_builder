@@ -79,7 +79,7 @@ class LessonTask:
 
         correction_strategy = next_task["error_correction"]
         # NOTE correction strategy is not none since it's NongeneratedNextTask
-        strategy_obj = get_strategy_object(correction_strategy)(self.db_manager)
+        strategy_obj = get_strategy_object(correction_strategy)(self.db_manager, self.user_id)
         if new_task := strategy_obj.choose_correction_task(task_eval):
             return {"order": next_task["order"], "task": new_task}
         else:

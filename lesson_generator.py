@@ -9,6 +9,7 @@ from data_structures import (
 )
 from database_orm import DatabaseManager, ValueDoesNotExistInDB
 from feedback_strategy import get_strategy_object
+from query_builder import QueryCriteria
 from task import Task
 from task_retriever import TaskFactory
 from datetime import datetime
@@ -132,9 +133,7 @@ class SpacedRepetitionLessonGenerator:
         scores_for_lesson: list[Score] = []
         if len_scores <= 0:
             return [], len_scores, self.num_words_per_lesson
-        timestamps = list(timestamp_scores.keys())
-        timestamps.sort()
-
+        timestamps = sorted(timestamp_scores.keys())
         for timestamp in timestamps:
             for score in timestamp_scores[timestamp]:
                 if len(scores_for_lesson) < self.num_words_per_lesson:
@@ -261,7 +260,7 @@ class SpacedRepetitionLessonGenerator:
         # NOTE for now create lesson task which partitions target words without overlaps, i.e.
         # a target word is targeted by one task only
         # TODO think about how to do it.
-        task_factory = TaskFactory(self.db_manager)
+        task_factory = TaskFactory(self.db_manager, self.user_id)
         lesson_plan = []
         # TODO devise a strategy of choosing correction strategy.
         # TODO test api with correction strategies too.
@@ -271,12 +270,13 @@ class SpacedRepetitionLessonGenerator:
             # CorrectionStrategy.EquivalentTaskStrategy
         ]
         for word in list(words):
-            task = task_factory.get_task_for_word({word})
+            task = task_factory.get_task_for_word({word}, QueryCriteria(doneByUser=False, target_words={word}))
+            logger.info(f"Added task with id {task.id} for word {word.item}")
             task_sequence: list[Task | CorrectionStrategy] = [task]
             # generate strategy sequence tasks
             for strategy in strategy_sequence:
                 strategy_class = get_strategy_object(strategy)
-                strategy_obj = strategy_class(self.db_manager)
+                strategy_obj = strategy_class(self.db_manager, self.user_id)
                 task_or_strategy = strategy_obj.try_generate_task_in_advance(
                     task_sequence
                 )

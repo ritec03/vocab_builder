@@ -40,6 +40,8 @@ class UserDBObj(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_name: Mapped[str] = mapped_column(unique=True)
+
+    lessons = relationship("UserLessonDBObj", back_populates="user")
     # create_date: Mapped[datetime] = mapped_column(insert_default=func.now())
 
 
@@ -163,6 +165,7 @@ class TaskDBObj(Base):
         "TaskResourceDBObj", passive_deletes=True, cascade="all, delete"
     )
     template: Mapped["TemplateDBObj"] = relationship("TemplateDBObj")
+    lesson_plan_tasks: Mapped[List["LessonPlanTaskDBObj"]] = relationship("LessonPlanTaskDBObj", back_populates="task")
 
 
 class TaskTargetWordDBObj(Base):
@@ -206,9 +209,9 @@ class UserLessonDBObj(Base):
     timestamp: Mapped[datetime] = mapped_column(type_=TIMESTAMP, nullable=True)  # No default value initially
     evaluations: Mapped[List["EvaluationDBObj"]] = relationship("EvaluationDBObj", cascade="all, delete")
     scores: Mapped[List["LearningDataDBObj"]] = relationship("LearningDataDBObj", back_populates="lesson", cascade="all, delete")
-    lesson_plan: Mapped["LessonPlanDBObj"] = relationship("LessonPlanDBObj", cascade="all, delete")
+    lesson_plan: Mapped["LessonPlanDBObj"] = relationship("LessonPlanDBObj", back_populates="lesson", cascade="all, delete")
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
-
+    user: Mapped["UserDBObj"] = relationship("UserDBObj", back_populates="lessons")
     __table_args__ = (Index("idx_timestamp_desc", timestamp.desc()),) # This index is useful for accessing most recent completed lessons
 
 # TODO test this event listener
@@ -231,7 +234,8 @@ class LessonPlanDBObj(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     lesson_id = mapped_column(Integer, ForeignKey("user_lessons.id"))
 
-    tasks: Mapped[List["LessonPlanTaskDBObj"]] = relationship("LessonPlanTaskDBObj", cascade="all, delete")
+    tasks: Mapped[List["LessonPlanTaskDBObj"]] = relationship("LessonPlanTaskDBObj", back_populates="lesson_plan", cascade="all, delete")
+    lesson: Mapped["UserLessonDBObj"] = relationship("UserLessonDBObj", back_populates="lesson_plan")
 
 
 class LessonPlanTaskDBObj(Base):
@@ -247,7 +251,9 @@ class LessonPlanTaskDBObj(Base):
     task_id = mapped_column(Integer, ForeignKey("tasks.id"), nullable=True)
     error_correction: Mapped[CorrectionStrategy] = mapped_column(Enum(CorrectionStrategy, validate_strings=True, nullable=True))
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
-    task: Mapped["TaskDBObj"] = relationship("TaskDBObj")
+    task: Mapped["TaskDBObj"] = relationship("TaskDBObj", back_populates="lesson_plan_tasks")
+
+    lesson_plan: Mapped["LessonPlanDBObj"] = relationship("LessonPlanDBObj", back_populates="tasks")
 
     __table_args__ = (UniqueConstraint("lesson_plan_id", "sequence_num", "attempt_num"),)
 

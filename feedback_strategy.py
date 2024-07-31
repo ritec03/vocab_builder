@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from data_structures import EXERCISE_THRESHOLD, CorrectionStrategy, LexicalItem
 from database_orm import DatabaseManager
 from evaluation import Evaluation
+from query_builder import QueryCriteria
 from task import Task
 from task_retriever import TaskFactory
 import logging
@@ -10,8 +11,9 @@ logger = logging.getLogger(__name__)
 
 
 class ErrorCorrectionStrategy(ABC):
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, user_id: int):
         self.db_manager = db_manager
+        self.user_id = user_id
 
     @abstractmethod
     def try_generate_task_in_advance(
@@ -129,8 +131,8 @@ class EquivalentTaskStrategy(ErrorCorrectionStrategy):
         Raises:
             Exception: If the new task is the same as the given task.
         """
-        new_task = TaskFactory(self.db_manager).get_task_for_word(
-            target_words, task.template
+        new_task = TaskFactory(self.db_manager, self.user_id).get_task_for_word(
+             target_words, QueryCriteria(), task.template
         )
         if new_task.id == task.id:
             raise Exception("Implement criteria not to choose the same task.")

@@ -1,4 +1,5 @@
 import random
+from query_builder import QueryCriteria
 from task_generator import AITaskGenerator
 from data_structures import LexicalItem, TaskType
 from database_orm import DatabaseManager
@@ -20,18 +21,31 @@ Add conditions on task choice:
 How to implement this?
 """
 
+"""
+Pydantic class for task factory options that contains the following:
+- target words
+- doneByUser: bool
+- doneInTimePeriod: datetime delta - within time period (now - delta, now)
+- doneEarlierThan: datetime delta - before this time period (now - delta)
+- minScore: int
+- maxScore: int
+- taskType: TaskType
+- resources: List[Resource]
+using sqlalchemy version 2.0 (latest), how can I programmatically create a set of functions that modify a statement? Use case - I want to create a function that executes things based on a set of criteria, and each criteria may or may not add additional statements to the query. 
+"""
 
 class TaskFactory:
     """Either retrieves or generates a task"""
 
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, user_id: int):
         self.db_manager = db_manager
+        self.user_id = user_id
 
     def get_task_for_word(
         self,
         target_words: set[LexicalItem],
+        criteria: QueryCriteria,
         template: TaskTemplate | None = None,
-        criteria: list | None = None,
     ) -> Task:
         """
         Retrieves or generates tasks based on the target set of words and additional criteria.
@@ -40,18 +54,15 @@ class TaskFactory:
         :param criteria: A list of criteria objects to apply in task selection.
         :return: A list of Task objects.
         """
-        if tasks := self.db_manager.get_tasks_for_words(target_words, 10):
-            # TODO implement behaviour into learning algorithm that would
-            # choose whether or not to give the user previously done task.
+        if tasks := self.db_manager.get_tasks_by_criteria(self.user_id, criteria, 10):
             return random.choice(tasks)  # NOTE for now just return a random task
         else:
-            return self.generate_task(target_words, template, criteria)
+            return self.generate_task(target_words, template)
 
     def generate_task(
         self,
         target_words: set[LexicalItem],
-        template: TaskTemplate | None = None,
-        criteria: list | None = None,
+        template: TaskTemplate | None = None
     ) -> Task:
         """
         Generates a new task based on the target words and criteria.
