@@ -107,6 +107,7 @@ const LessonPage: React.FC = () => {
         <main className="flex min-h-screen flex-col items-center justify-center p-24">
             <Header />
             {(isLoading) ? (
+                // BUG fix loading screen - it does not show up
                 <p>Just a moment. Loading your lesson...</p>
             ) : (isError) ? (
                 <p className="text-red-500">Failed to fetch lesson.</p>

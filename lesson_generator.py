@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import logging
 from data_structures import (
     EXERCISE_THRESHOLD,
@@ -7,7 +8,7 @@ from data_structures import (
     Score,
     UserScore,
 )
-from database_orm import DatabaseManager, ValueDoesNotExistInDB
+from database_orm import DatabaseManager, LessonPlan, ValueDoesNotExistInDB
 from feedback_strategy import get_strategy_object
 from query_builder import QueryCriteria
 from task import Task
@@ -41,6 +42,10 @@ configured at teh lesson generator level and not anywhere downstream.
 
 """
 
+@dataclass(frozen=True)
+class LessonTargetWord():
+    target_word: LexicalItem
+    is_review: bool
 
 class SpacedRepetitionLessonGenerator:
     # TODO define the scope of learning algorithm module more vigorously
@@ -87,7 +92,7 @@ class SpacedRepetitionLessonGenerator:
         self.user_id = user_id
         self.db_manager = db_manager
 
-    def generate_lesson(self) -> list[tuple[Task, list[CorrectionStrategy | Task]]]:
+    def generate_lesson(self) -> LessonPlan:
         """
         Returns the first tuple of the lesson plan.
         """
@@ -146,7 +151,7 @@ class SpacedRepetitionLessonGenerator:
 
     def choose_target_words(
         self, user_scores: dict[int, UserScore]
-    ) -> set[LexicalItem]:
+    ) -> set[LessonTargetWord]:
         """
         Retrieves the latest score for each practiced word by the user.
         Arrange it by time practiced, then from the oldest words:
@@ -185,32 +190,35 @@ class SpacedRepetitionLessonGenerator:
             ]
         )
 
-        words_for_review = {
-            self.db_manager.get_word_by_id(score.word_id)
-            for score in scores_of_words_to_include_in_lesson
-        }
-        if not all(words_for_review):
+        words = [self.db_manager.get_word_by_id(score.word_id) for score in scores_of_words_to_include_in_lesson]
+        if any(word is None for word in words):
             raise ValueDoesNotExistInDB(
                 "A word object was not found in the database in words for review."
             )
+
+        words_for_review = {
+            LessonTargetWord(target_word=word, is_review=True)
+            for word in words
+        }
         logger.info(
             "Words for review are %s", ", ".join(map(str, list(words_for_review)))
         )
 
         # Retrieve new words if needed
         if num_new_words_to_learn > 0:
-            new_words = self.db_manager.retrieve_words_for_lesson(
+            retrieved_words = self.db_manager.retrieve_words_for_lesson(
                 self.user_id, num_new_words_to_learn
             )
+            new_words = {LessonTargetWord(target_word=word, is_review=False) for word in retrieved_words}
         else:
-            new_words: set[LexicalItem] = set()
+            new_words: set[LessonTargetWord] = set()
 
         logger.info("New words to learn are %s", ", ".join(map(str, list(new_words))))
         words_for_review = words_for_review.union(new_words)
         logger.info(words_for_review)
 
         # NOTE none of the elements of words_for_review are None since we check it with any()
-        return words_for_review  # type: ignore
+        return words_for_review
 
     def determine_num_of_new_words(
         self, leftover_count: int, high_scores_count: int
@@ -248,8 +256,8 @@ class SpacedRepetitionLessonGenerator:
         )
 
     def generate_lesson_plan(
-        self, words: set[LexicalItem]
-    ) -> list[tuple[Task, list[CorrectionStrategy | Task]]]:
+        self, words: set[LessonTargetWord]
+    ) -> LessonPlan:
         """
         Generates lesson plan for the user based on the targetwords.
         Returns the lesson plan which is a list of tuples, where each tuple
@@ -261,7 +269,7 @@ class SpacedRepetitionLessonGenerator:
         # a target word is targeted by one task only
         # TODO think about how to do it.
         task_factory = TaskFactory(self.db_manager, self.user_id)
-        lesson_plan: list[tuple[Task, list[CorrectionStrategy | Task]]] = []
+        lesson_plan: LessonPlan = []
         # TODO devise a strategy of choosing correction strategy.
         # TODO test api with correction strategies too.
         strategy_sequence = [
@@ -270,10 +278,24 @@ class SpacedRepetitionLessonGenerator:
             # CorrectionStrategy.EquivalentTaskStrategy
         ]
         for word in list(words):
-            lesson_task_ids = {task.id for _, tasks in lesson_plan for task in tasks if isinstance(task, Task)}
-            lesson_task_ids.union({task.id for task, _ in lesson_plan})
-            task = task_factory.get_task_for_word(QueryCriteria(doneByUser=False, target_words={word}, excluded_task_ids=lesson_task_ids))
-            logger.info(f"Added task with id {task.id} for word {word.item}")
+            lesson_task_ids = self._get_task_ids_for_lesson_plan(lesson_plan)
+            if word.is_review:
+                task = task_factory.get_task_for_word(
+                    QueryCriteria(
+                        doneByUser=True, 
+                        target_words={word.target_word}, 
+                        excluded_task_ids=lesson_task_ids
+                    )
+                )
+            else:
+                task = task_factory.get_task_for_word(
+                    QueryCriteria(
+                        doneByUser=False, 
+                        target_words={word.target_word}, 
+                        excluded_task_ids=lesson_task_ids
+                    )
+                )
+            logger.info(f"Added task with id {task.id} for word {word.target_word.item}")
             task_sequence: list[Task | CorrectionStrategy] = [task]
             # generate strategy sequence tasks
             for strategy in strategy_sequence:
@@ -288,3 +310,18 @@ class SpacedRepetitionLessonGenerator:
         if not lesson_plan[0][0]:  # NOTE maybe emits error
             logger.warning("Lesson plan is empty.")
         return lesson_plan
+    
+    def _get_task_ids_for_lesson_plan(self, lesson_plan: LessonPlan) -> set[int]:
+        """
+        Retrieves the task IDs for a given lesson plan.
+
+        Args:
+            lesson_plan (LessonPlan): The lesson plan to retrieve task IDs from.
+
+        Returns:
+            set[int]: A set of task IDs.
+
+        """
+        lesson_task_ids = {task.id for _, tasks in lesson_plan for task in tasks if isinstance(task, Task)}
+        lesson_task_ids.union({task.id for task, _ in lesson_plan})
+        return lesson_task_ids

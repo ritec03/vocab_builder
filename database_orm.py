@@ -87,7 +87,7 @@ class ExpandedScore(TypedDict):
     word: LexicalItem
     score: int
 
-LessonPlan = List[Tuple[Task, List[Union[CorrectionStrategy, Task]]]]
+LessonPlan = list[tuple[Task, list[CorrectionStrategy | Task]]]
 
 class ValueDoesNotExistInDB(LookupError):
     """
