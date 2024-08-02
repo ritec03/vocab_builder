@@ -279,22 +279,13 @@ class SpacedRepetitionLessonGenerator:
         ]
         for word in list(words):
             lesson_task_ids = self._get_task_ids_for_lesson_plan(lesson_plan)
-            if word.is_review:
-                task = task_factory.get_task_for_word(
-                    QueryCriteria(
-                        doneByUser=True, 
-                        target_words={word.target_word}, 
-                        excluded_task_ids=lesson_task_ids
-                    )
+            task = task_factory.get_task_for_word(
+                QueryCriteria(
+                    doneByUser=word.is_review, 
+                    target_words={word.target_word}, 
+                    excluded_task_ids=lesson_task_ids
                 )
-            else:
-                task = task_factory.get_task_for_word(
-                    QueryCriteria(
-                        doneByUser=False, 
-                        target_words={word.target_word}, 
-                        excluded_task_ids=lesson_task_ids
-                    )
-                )
+            )
             logger.info(f"Added task with id {task.id} for word {word.target_word.item}")
             task_sequence: list[Task | CorrectionStrategy] = [task]
             # generate strategy sequence tasks
